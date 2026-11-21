@@ -17,6 +17,9 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 import streamlit as st
 
 # Page configuration
@@ -156,6 +159,72 @@ def main() -> None:
             """,
             unsafe_allow_html=True,
         )
+
+    st.markdown("---")
+
+    # Section 2: Visual Charts
+    col_left, col_right = st.columns([6, 5])
+
+    with col_left:
+        st.subheader("📈 Historical Longitudinal Trends (Rainfall & Dengue Cases)")
+        fig_trend = make_subplots(specs=[[{"secondary_y": True}]])
+
+        # Rainfall bar
+        fig_trend.add_trace(
+            go.Bar(
+                x=ward_df["date"],
+                y=ward_df["rainfall_mm"],
+                name="Rainfall (mm)",
+                marker_color="rgba(33, 150, 243, 0.4)",
+            ),
+            secondary_y=True,
+        )
+
+        # Actual Dengue Cases
+        fig_trend.add_trace(
+            go.Scatter(
+                x=ward_df["date"],
+                y=ward_df["dengue_cases"],
+                name="Actual Dengue Cases",
+                mode="lines",
+                line=dict(color="#d32f2f", width=2.5),
+            ),
+            secondary_y=False,
+        )
+
+        # Vertical line indicating currently selected week
+        fig_trend.add_vline(
+            x=pd.to_datetime(selected_date_str).timestamp() * 1000,
+            line_dash="dash",
+            line_color="#212121",
+            annotation_text="Selected Week",
+            annotation_position="top left",
+        )
+
+        fig_trend.update_layout(
+            hovermode="x unified",
+            height=390,
+            margin=dict(l=10, r=10, t=30, b=10),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        )
+        fig_trend.update_yaxes(title_text="Weekly Dengue Cases", secondary_y=False)
+        fig_trend.update_yaxes(title_text="Rainfall (mm)", secondary_y=True, showgrid=False)
+        st.plotly_chart(fig_trend, use_container_width=True)
+
+    with col_right:
+        st.subheader(f"🏙️ Ward Cross-Section Comparison ({selected_date_str})")
+        cross_df = city_df[city_df["date"].dt.strftime("%Y-%m-%d") == selected_date_str].copy()
+
+        fig_comp = px.bar(
+            cross_df.sort_values("dengue_cases", ascending=True),
+            x="dengue_cases",
+            y="ward_id",
+            orientation="h",
+            labels={"dengue_cases": "Recorded Cases", "ward_id": "Ward ID"},
+            title=f"Recorded Ward Cases across {selected_city}",
+        )
+        fig_comp.update_layout(height=390, margin=dict(l=10, r=10, t=30, b=10))
+        st.plotly_chart(fig_comp, use_container_width=True)
 
     # Footer
     st.markdown(
