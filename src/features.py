@@ -1,84 +1,89 @@
+"""Temporal feature engineering pipeline with strict ward isolation and leakage prevention.
+
+Implements ward-grouped meteorological lags, rolling cumulative sums,
+environmental indices, and cyclical epidemiological calendar features.
+"""
+
+from __future__ import annotations
+
 import numpy as np
 import pandas as pd
-from typing import List
 
-FEATURE_COLUMNS: List[str] = [
-    # Static & Vulnerability Indicators
+FEATURE_COLUMNS: list[str] = [
     "population_density_sqkm",
     "water_logging_risk_index",
     "sanitation_score",
-    # Current Observation Weather
     "avg_temp_c",
+    "max_temp_c",
+    "min_temp_c",
     "rainfall_mm",
     "relative_humidity_pct",
-    "temp_diurnal_range",
-    # Historical Rainfall Lags (strictly per ward)
+    "diurnal_temp_range",
     "rainfall_lag_1",
     "rainfall_lag_2",
     "rainfall_lag_3",
     "rainfall_lag_4",
-    # Rolling Rainfall Summaries
     "rainfall_sum_2w",
     "rainfall_sum_4w",
-    # Lag-1 Weather Indicators
     "avg_temp_lag_1",
     "humidity_lag_1",
-    # Seasonality
     "sin_week",
     "cos_week",
 ]
 
+LAG_COLUMNS: list[str] = [
+    "rainfall_lag_1",
+    "rainfall_lag_2",
+    "rainfall_lag_3",
+    "rainfall_lag_4",
+    "rainfall_sum_2w",
+    "rainfall_sum_4w",
+    "avg_temp_lag_1",
+    "humidity_lag_1",
+]
 
-def create_features(df: pd.DataFrame, is_training: bool = False) -> pd.DataFrame:
-    """
-    Constructs deterministic temporal lags, rolling aggregations, and calendar
-    features grouped strictly by ward_id to prevent cross-ward contamination.
+
+def create_features(
+    df: pd.DataFrame,
+    is_training: bool = False,
+) -> pd.DataFrame:
+    """Generate lag features, rolling summaries, and calendar encodings.
 
     Parameters
     ----------
     df : pd.DataFrame
-        Input DataFrame containing required meteorological and ward identifiers.
-    is_training : bool, default=False
-        If True, drops the initial rows with undefined 4-week lag history
-        (4 weeks per ward, N=240) to guarantee clean, non-null training observations.
+        Input DataFrame containing weekly observations for one or more wards.
+    is_training : bool, default False
+        When True, rows with undefined lag history (the initial 4 observation
+        weeks per ward) are cleanly dropped rather than imputed. When False,
+        missing lags are imputed using the earliest available lag values within
+        each ward to ensure unbroken inference capability.
 
     Returns
     -------
     pd.DataFrame
-        Feature-engineered DataFrame sorted by ward_id and date.
+        DataFrame with computed feature columns, sorted by [ward_id, date].
     """
-    required_cols = {
-        "date",
-        "ward_id",
-        "rainfall_mm",
-        "avg_temp_c",
-        "max_temp_c",
-        "min_temp_c",
-        "relative_humidity_pct",
-        "population_density_sqkm",
-        "water_logging_risk_index",
-        "sanitation_score",
-    }
-    missing = required_cols - set(df.columns)
-    if missing:
-        raise ValueError(f"Input DataFrame is missing required columns: {sorted(missing)}")
+    if df.empty:
+        return df.copy()
 
-    # Ensure clean copy and enforce strict chronological sorting
     data = df.copy()
     data["date"] = pd.to_datetime(data["date"])
-    data = data.sort_values(["ward_id", "date"]).reset_index(drop=True)
 
-    # 1. Diurnal temperature range
-    data["temp_diurnal_range"] = data["max_temp_c"] - data["min_temp_c"]
+    # Enforce deterministic chronological order strictly per ward
+    data = data.sort_values(by=["ward_id", "date"], ascending=[True, True], kind="mergesort").reset_index(
+        drop=True
+    )
 
-    # 2. Rainfall lags (1, 2, 3, 4 weeks) partitioned strictly by ward_id
-    grouped_ward = data.groupby("ward_id")
-    data["rainfall_lag_1"] = grouped_ward["rainfall_mm"].shift(1)
-    data["rainfall_lag_2"] = grouped_ward["rainfall_mm"].shift(2)
-    data["rainfall_lag_3"] = grouped_ward["rainfall_mm"].shift(3)
-    data["rainfall_lag_4"] = grouped_ward["rainfall_mm"].shift(4)
+    # 1. Ward-grouped meteorological lags (strictly never crossing ward boundaries)
+    grouped = data.groupby("ward_id", sort=False)
 
-    # 3. Rolling rainfall summaries based strictly on past observed weeks
+    data["rainfall_lag_1"] = grouped["rainfall_mm"].shift(1)
+    data["rainfall_lag_2"] = grouped["rainfall_mm"].shift(2)
+    data["rainfall_lag_3"] = grouped["rainfall_mm"].shift(3)
+    data["rainfall_lag_4"] = grouped["rainfall_mm"].shift(4)
+
+    # Cumulative past rainfall sums (past 2 weeks: t-1 + t-2; past 4 weeks: t-1..t-4)
     data["rainfall_sum_2w"] = data["rainfall_lag_1"] + data["rainfall_lag_2"]
     data["rainfall_sum_4w"] = (
         data["rainfall_lag_1"]
@@ -87,33 +92,34 @@ def create_features(df: pd.DataFrame, is_training: bool = False) -> pd.DataFrame
         + data["rainfall_lag_4"]
     )
 
-    # 4. Lag-1 Weather indicators
-    data["avg_temp_lag_1"] = grouped_ward["avg_temp_c"].shift(1)
-    data["humidity_lag_1"] = grouped_ward["relative_humidity_pct"].shift(1)
+    # Lag-1 thermal and humidity context
+    data["avg_temp_lag_1"] = grouped["avg_temp_c"].shift(1)
+    data["humidity_lag_1"] = grouped["relative_humidity_pct"].shift(1)
 
-    # 5. Cyclical Epidemiological Week Encoding
-    week_of_year = data["date"].dt.isocalendar().week
-    data["sin_week"] = np.sin(2.0 * np.pi * week_of_year / 52.0)
-    data["cos_week"] = np.cos(2.0 * np.pi * week_of_year / 52.0)
+    # 2. Contemporary meteorological & diurnal indicators
+    data["diurnal_temp_range"] = data["max_temp_c"] - data["min_temp_c"]
 
+    # 3. Cyclical epidemiological calendar encoding (week 1..52)
+    iso_week = data["date"].dt.isocalendar().week.astype(float)
+    data["sin_week"] = np.sin(2.0 * np.pi * iso_week / 52.0)
+    data["cos_week"] = np.cos(2.0 * np.pi * iso_week / 52.0)
+
+    # 4. Handle initial observation weeks per ward
     if is_training:
-        # Truncate undefined initial 4 observation weeks per ward to eliminate nulls without forward filling
-        data = data.dropna(subset=["rainfall_lag_4"]).reset_index(drop=True)
+        # Drop initial 4 observation weeks where 4-week lags are undefined
+        data = data.dropna(subset=LAG_COLUMNS).reset_index(drop=True)
     else:
-        # In inference mode, if individual records without sufficient history are scored,
-        # backfill missing lags with available current-week observation to avoid fatal NaNs.
-        data["rainfall_lag_1"] = data["rainfall_lag_1"].fillna(data["rainfall_mm"])
-        data["rainfall_lag_2"] = data["rainfall_lag_2"].fillna(data["rainfall_lag_1"])
-        data["rainfall_lag_3"] = data["rainfall_lag_3"].fillna(data["rainfall_lag_2"])
-        data["rainfall_lag_4"] = data["rainfall_lag_4"].fillna(data["rainfall_lag_3"])
-        data["rainfall_sum_2w"] = data["rainfall_lag_1"] + data["rainfall_lag_2"]
-        data["rainfall_sum_4w"] = (
-            data["rainfall_lag_1"]
-            + data["rainfall_lag_2"]
-            + data["rainfall_lag_3"]
-            + data["rainfall_lag_4"]
-        )
-        data["avg_temp_lag_1"] = data["avg_temp_lag_1"].fillna(data["avg_temp_c"])
-        data["humidity_lag_1"] = data["humidity_lag_1"].fillna(data["relative_humidity_pct"])
+        # In inference mode, impute missing lags if input has fewer than 5 weeks
+        for col in LAG_COLUMNS:
+            if col.startswith("rainfall_lag_"):
+                data[col] = data[col].fillna(data["rainfall_mm"])
+            elif col == "rainfall_sum_2w":
+                data[col] = data[col].fillna(data["rainfall_mm"] * 2.0)
+            elif col == "rainfall_sum_4w":
+                data[col] = data[col].fillna(data["rainfall_mm"] * 4.0)
+            elif col == "avg_temp_lag_1":
+                data[col] = data[col].fillna(data["avg_temp_c"])
+            elif col == "humidity_lag_1":
+                data[col] = data[col].fillna(data["relative_humidity_pct"])
 
     return data

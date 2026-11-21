@@ -1,69 +1,101 @@
 {
-  "pipeline": "Two-Stage Hurdle Model (HistGradientBoostingClassifier + HistGradientBoostingRegressor)",
-  "baselines": {
-    "all_zero": {
-      "train": {
+  "metadata": {
+    "model_architecture": "Two-Stage Hurdle (HistGradientBoostingClassifier + HistGradientBoostingRegressor)",
+    "trained_at": "2026-11-21T17:07:27.622827+00:00",
+    "n_features": 19,
+    "feature_names": [
+      "population_density_sqkm",
+      "water_logging_risk_index",
+      "sanitation_score",
+      "avg_temp_c",
+      "max_temp_c",
+      "min_temp_c",
+      "rainfall_mm",
+      "relative_humidity_pct",
+      "diurnal_temp_range",
+      "rainfall_lag_1",
+      "rainfall_lag_2",
+      "rainfall_lag_3",
+      "rainfall_lag_4",
+      "rainfall_sum_2w",
+      "rainfall_sum_4w",
+      "avg_temp_lag_1",
+      "humidity_lag_1",
+      "sin_week",
+      "cos_week"
+    ],
+    "thresholds": {
+      "low": {
+        "p_max": 0.25,
+        "cases_max": 1.0
+      },
+      "medium": {
+        "p_max": 0.5,
+        "cases_max": 3.0
+      },
+      "high": {
+        "p_max": 0.75,
+        "cases_max": 8.0
+      }
+    }
+  },
+  "splits": {
+    "train": {
+      "split": "train",
+      "sample_count": 21660,
+      "positive_cases_count": 9228,
+      "positive_prevalence_pct": 42.6,
+      "baseline_all_zero": {
         "mae": 2.6977,
         "rmse": 5.3848,
-        "f1": 0.0,
-        "recall": 0.0
+        "recall_positive": 0.0,
+        "f1_positive": 0.0
       },
-      "val": {
-        "mae": 2.6532,
-        "rmse": 5.4679,
-        "f1": 0.0,
-        "recall": 0.0
-      },
-      "test": {
-        "mae": 2.3798,
-        "rmse": 4.6067,
-        "f1": 0.0,
-        "recall": 0.0
+      "hurdle_model": {
+        "mae": 0.7038,
+        "rmse": 1.3104,
+        "precision_positive": 0.9388,
+        "recall_positive": 0.9017,
+        "f1_positive": 0.9199
       }
     },
-    "ridge_regression": {
-      "test_mae": 1.3739,
-      "test_rmse": 2.349
-    }
-  },
-  "hurdle_model": {
-    "train": {
-      "mae": 0.6998,
-      "rmse": 1.2886,
-      "precision": 0.9218,
-      "recall": 0.9265,
-      "f1": 0.9242,
-      "positive_prevalence": 0.426,
-      "total_samples": 21660,
-      "positive_samples": 9228
-    },
     "validation": {
-      "mae": 0.9148,
-      "rmse": 1.7879,
-      "precision": 0.8695,
-      "recall": 0.9006,
-      "f1": 0.8848,
-      "positive_prevalence": 0.4168,
-      "total_samples": 6300,
-      "positive_samples": 2626
+      "split": "validation",
+      "sample_count": 6300,
+      "positive_cases_count": 2626,
+      "positive_prevalence_pct": 41.68,
+      "baseline_all_zero": {
+        "mae": 2.6532,
+        "rmse": 5.4679,
+        "recall_positive": 0.0,
+        "f1_positive": 0.0
+      },
+      "hurdle_model": {
+        "mae": 0.9166,
+        "rmse": 1.8049,
+        "precision_positive": 0.8886,
+        "recall_positive": 0.8899,
+        "f1_positive": 0.8893
+      }
     },
     "test": {
-      "mae": 0.8785,
-      "rmse": 1.6579,
-      "precision": 0.8983,
-      "recall": 0.876,
-      "f1": 0.887,
-      "positive_prevalence": 0.4135,
-      "total_samples": 3120,
-      "positive_samples": 1290
+      "split": "test",
+      "sample_count": 3120,
+      "positive_cases_count": 1290,
+      "positive_prevalence_pct": 41.35,
+      "baseline_all_zero": {
+        "mae": 2.3798,
+        "rmse": 4.6067,
+        "recall_positive": 0.0,
+        "f1_positive": 0.0
+      },
+      "hurdle_model": {
+        "mae": 0.871,
+        "rmse": 1.637,
+        "precision_positive": 0.9274,
+        "recall_positive": 0.8411,
+        "f1_positive": 0.8821
+      }
     }
-  },
-  "risk_tier_policy": {
-    "p_low": 0.25,
-    "p_med": 0.5,
-    "p_high": 0.75,
-    "cases_low": 1.0,
-    "cases_med": 3.0,
-    "cases_high": 8.0
   }
 }

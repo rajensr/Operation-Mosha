@@ -1,116 +1,122 @@
-import os
-import sys
-from pathlib import Path
+"""Inference contract interface for scoring weekly ward dengue risk observations.
 
-# Ensure repository root is on sys.path
-ROOT_DIR = Path(__file__).resolve().parent.parent
-if str(ROOT_DIR) not in sys.path:
-    sys.path.insert(0, str(ROOT_DIR))
+Exposes:
+    score_rows(df: pd.DataFrame) -> pd.DataFrame
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+import sys
+from typing import Any
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 import joblib
 import numpy as np
 import pandas as pd
-from typing import Optional, Dict, Any
 
-from src.features import create_features, FEATURE_COLUMNS
+from src.features import FEATURE_COLUMNS, create_features
 
-_MODEL_BUNDLE: Optional[Dict[str, Any]] = None
-_BUNDLE_PATH = Path("models/model_bundle.joblib")
+DEFAULT_MODEL_PATH = Path("models/model_bundle.joblib")
 
 
-def load_model_bundle(bundle_path: Optional[Path] = None) -> Dict[str, Any]:
+def _assign_risk_tier(p_nonzero: float, expected_cases: float, thresholds: dict[str, Any]) -> str:
+    """Map outbreak probability and expected cases to canonical risk tiers.
+
+    Policy:
+        - Low: p < 0.25 and expected_cases < 1.0
+        - Medium: 0.25 <= p < 0.50 or 1.0 <= expected_cases < 3.0
+        - High: 0.50 <= p < 0.75 or 3.0 <= expected_cases < 8.0
+        - Critical: p >= 0.75 or expected_cases >= 8.0
     """
-    Loads and caches the model bundle from disk.
-    """
-    global _MODEL_BUNDLE
-    path = bundle_path or _BUNDLE_PATH
-    if _MODEL_BUNDLE is not None and bundle_path is None:
-        return _MODEL_BUNDLE
+    low_t = thresholds.get("low", {"p_max": 0.25, "cases_max": 1.0})
+    med_t = thresholds.get("medium", {"p_max": 0.50, "cases_max": 3.0})
+    high_t = thresholds.get("high", {"p_max": 0.75, "cases_max": 8.0})
 
-    if not os.path.exists(path):
-        raise FileNotFoundError(
-            f"Model bundle not found at '{path}'. "
-            "Please train the model first by executing: python src/train.py"
-        )
-
-    bundle = joblib.load(path)
-    if bundle_path is None:
-        _MODEL_BUNDLE = bundle
-    return bundle
-
-
-def classify_risk_tier(p_nonzero: float, expected_cases: float, thresholds: Dict[str, Any]) -> str:
-    """
-    Categorizes risk into Low, Medium, High, or Critical using explicit policy rules.
-    """
-    p_low = thresholds.get("p_low", 0.25)
-    p_med = thresholds.get("p_med", 0.50)
-    p_high = thresholds.get("p_high", 0.75)
-    cases_low = thresholds.get("cases_low", 1.0)
-    cases_med = thresholds.get("cases_med", 3.0)
-    cases_high = thresholds.get("cases_high", 8.0)
-
-    if p_nonzero >= p_high or expected_cases >= cases_high:
+    if p_nonzero >= high_t["p_max"] or expected_cases >= high_t["cases_max"]:
         return "Critical"
-    elif p_nonzero >= p_med or expected_cases >= cases_med:
+    elif p_nonzero >= med_t["p_max"] or expected_cases >= med_t["cases_max"]:
         return "High"
-    elif p_nonzero >= p_low or expected_cases >= cases_low:
+    elif p_nonzero >= low_t["p_max"] or expected_cases >= low_t["cases_max"]:
         return "Medium"
     else:
         return "Low"
 
 
-def score_rows(df: pd.DataFrame, bundle_path: Optional[Path] = None) -> pd.DataFrame:
-    """
-    Inference Contract:
-    Input: cleaned weekly ward observations containing weather and vulnerability columns.
-    Output: a DataFrame with at least:
-        - ward_id
-        - date
-        - p_nonzero
-        - expected_cases
-        - risk_tier
+def load_model_bundle(model_path: Path = DEFAULT_MODEL_PATH) -> dict[str, Any]:
+    """Load and cache serialized model bundle."""
+    if not model_path.exists():
+        raise FileNotFoundError(
+            f"Model artifact not found at '{model_path}'. "
+            "Please train the model first by running:\n"
+            "    python src/train.py"
+        )
+    return joblib.load(model_path)
 
-    Ensures the dashboard can call this without retraining the model.
+
+def score_rows(
+    df: pd.DataFrame,
+    model_bundle: dict[str, Any] | None = None,
+    model_path: Path = DEFAULT_MODEL_PATH,
+) -> pd.DataFrame:
+    """Score weekly ward observations and compute dengue outbreak risk tiers.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Input DataFrame containing weekly ward weather and vulnerability indicators.
+    model_bundle : dict, optional
+        Preloaded bundle dictionary. If None, loads from `model_path`.
+    model_path : Path, default models/model_bundle.joblib
+        Path to serialized model bundle.
+
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame with columns: [ward_id, date, p_nonzero, expected_cases, risk_tier]
     """
     if df.empty:
-        return pd.DataFrame(
-            columns=["ward_id", "date", "p_nonzero", "expected_cases", "risk_tier"]
-        )
+        return pd.DataFrame(columns=["ward_id", "date", "p_nonzero", "expected_cases", "risk_tier"])
 
-    bundle = load_model_bundle(bundle_path)
-    classifier = bundle["classifier"]
-    regressor = bundle["regressor"]
-    feature_names = bundle.get("feature_names", FEATURE_COLUMNS)
-    thresholds = bundle.get("thresholds", {})
+    if model_bundle is None:
+        model_bundle = load_model_bundle(model_path)
 
-    # Generate lag and calendar features
-    feature_df = create_features(df, is_training=False)
+    clf = model_bundle["classifier"]
+    reg = model_bundle["regressor"]
+    feature_cols = model_bundle.get("feature_names", FEATURE_COLUMNS)
+    thresholds = model_bundle.get("thresholds", {})
 
-    # Align input matrix with feature names
-    X = feature_df[feature_names]
+    # Compute required feature representations
+    feat_df = create_features(df, is_training=False)
 
-    # Stage 1: Probability of positive outbreak week
-    p_nonzero_arr = classifier.predict_proba(X)[:, 1]
+    # Extract feature matrix
+    X = feat_df[feature_cols]
 
-    # Stage 2: Expected cases conditional on positive week
-    cond_cases_arr = np.clip(regressor.predict(X), a_min=0.0, a_max=None)
+    # Stage 1: Predict outbreak probability
+    p_nonzero = clf.predict_proba(X)[:, 1]
 
-    # Composite Expected Count
-    expected_cases_arr = np.clip(p_nonzero_arr * cond_cases_arr, a_min=0.0, a_max=None)
+    # Stage 2: Predict conditional severity on positive cases
+    sev_pred = reg.predict(X)
+    sev_pred = np.clip(sev_pred, a_min=0.0, a_max=None)
 
-    # Risk tiers
+    # Combined expected cases: E[y] = P(y > 0) * E[y | y > 0]
+    expected_cases = np.clip(p_nonzero * sev_pred, a_min=0.0, a_max=None)
+
+    # Map risk tiers row-wise
     risk_tiers = [
-        classify_risk_tier(p, cases, thresholds)
-        for p, cases in zip(p_nonzero_arr, expected_cases_arr)
+        _assign_risk_tier(p, c, thresholds)
+        for p, c in zip(p_nonzero, expected_cases)
     ]
 
     out_df = pd.DataFrame(
         {
-            "ward_id": feature_df["ward_id"],
-            "date": feature_df["date"].dt.strftime("%Y-%m-%d"),
-            "p_nonzero": np.round(p_nonzero_arr, 4),
-            "expected_cases": np.round(expected_cases_arr, 2),
+            "ward_id": feat_df["ward_id"].values,
+            "date": feat_df["date"].dt.strftime("%Y-%m-%d").values,
+            "p_nonzero": np.round(p_nonzero, 4),
+            "expected_cases": np.round(expected_cases, 2),
             "risk_tier": risk_tiers,
         }
     )
