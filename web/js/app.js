@@ -431,7 +431,9 @@ async function renderLongitudinalTrend(wardId, selectedDate) {
       }];
     }
 
-    Plotly.newPlot('chart-longitudinal', [traceRain, traceCases], layout, { responsive: true, displayModeBar: false });
+    if (window.Plotly) {
+      Plotly.newPlot('chart-longitudinal', [traceRain, traceCases], layout, { responsive: true, displayModeBar: false });
+    }
   } catch (err) {
     console.error('Failed to render longitudinal chart:', err);
   }
@@ -457,7 +459,9 @@ async function renderWardCrossSection() {
     layout.margin = { l: 90, r: 20, t: 20, b: 35 };
     layout.xaxis.title = 'Observed Active Cases';
 
-    Plotly.newPlot('chart-cross-section', [trace], layout, { responsive: true, displayModeBar: false });
+    if (window.Plotly) {
+      Plotly.newPlot('chart-cross-section', [trace], layout, { responsive: true, displayModeBar: false });
+    }
   } catch (err) {
     console.error('Failed to render cross-section chart:', err);
   }
@@ -525,7 +529,9 @@ async function loadVulnerabilityMatrix() {
     sLayout.xaxis.title = 'Water-Logging Risk Index';
     sLayout.yaxis.title = 'Population Density (/km2)';
 
-    Plotly.newPlot('chart-vuln-scatter', [traceScatter], sLayout, { responsive: true, displayModeBar: false });
+    if (window.Plotly) {
+      Plotly.newPlot('chart-vuln-scatter', [traceScatter], sLayout, { responsive: true, displayModeBar: false });
+    }
   } catch (err) {
     console.error('Failed to load vulnerability matrix:', err);
   }
@@ -637,7 +643,9 @@ async function loadAnalytics() {
       tickfont: { color: 'rgb(247, 255, 229)' },
     };
 
-    Plotly.newPlot('chart-monthly-seasonality', [traceRain, traceCases], mLayout, { responsive: true, displayModeBar: false });
+    if (window.Plotly) {
+      Plotly.newPlot('chart-monthly-seasonality', [traceRain, traceCases], mLayout, { responsive: true, displayModeBar: false });
+    }
 
     // Pearson Correlation Bar Chart
     const corrSorted = data.correlations.sort((a, b) => a.correlation - b.correlation);
@@ -656,7 +664,9 @@ async function loadAnalytics() {
     cLayout.margin = { l: 140, r: 20, t: 20, b: 35 };
     cLayout.xaxis.title = 'Pearson Correlation with Dengue Cases';
 
-    Plotly.newPlot('chart-correlations', [traceCorr], cLayout, { responsive: true, displayModeBar: false });
+    if (window.Plotly) {
+      Plotly.newPlot('chart-correlations', [traceCorr], cLayout, { responsive: true, displayModeBar: false });
+    }
   } catch (err) {
     console.error('Failed to load analytics:', err);
   }
