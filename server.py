@@ -148,9 +148,9 @@ def predict():
     except Exception:
         target_dt = pd.to_datetime(datetime.now().strftime("%Y-%m-%d"))
 
-    sim_rainfall = float(data.get("rainfall_mm", 20.0))
+    sim_rainfall = max(float(data.get("rainfall_mm", 20.0)), 0.0)
     sim_avg_temp = float(data.get("avg_temp_c", 28.0))
-    sim_humidity = float(data.get("relative_humidity_pct", 75.0))
+    sim_humidity = min(max(float(data.get("relative_humidity_pct", 75.0)), 0.0), 100.0)
 
     df = get_dataset()
     ward_df = df[df["ward_id"] == ward_id].sort_values("date").reset_index(drop=True)

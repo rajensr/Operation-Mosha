@@ -26,13 +26,17 @@ let wardsData = [];
 let currentWardId = 'CCC_Ward_01';
 let currentCity = 'Chittagong';
 let vulnerabilityData = [];
+let currentLags = { lag1: 0, lag2: 0, lag3: 0, lag4: 0 };
+let forecastDebounceTimer = null;
 
 // Initialize SPA on DOM Ready
 document.addEventListener('DOMContentLoaded', () => {
   setupNavigation();
   initSurveillance();
   setupScenarioPresets();
+  setupMeteorologicalInputListeners();
   setupTableSearchAndExport();
+  setupProtocolSimulatorListeners();
   loadVulnerabilityMatrix();
   loadAnalytics();
   loadTelemetry();
@@ -87,14 +91,89 @@ function setupScenarioPresets() {
       if (values) {
         document.getElementById('num-rainfall').value = values.rain.toFixed(1);
         document.getElementById('num-temp').value = values.temp.toFixed(1);
-        document.getElementById('num-humidity').value = values.hum.toFixed(1);
+        document.getElementById('num-humidity').value = Math.min(values.hum, 100.0).toFixed(1);
+        updateRainAccumulationPreview(values.rain);
         runForecast();
       }
     });
   });
 }
 
-// 3. Initialize Surveillance Form & Load Wards
+// 3. Real-Time Meteorological Input Listeners with Humidity Clamping
+function setupMeteorologicalInputListeners() {
+  const rainInput = document.getElementById('num-rainfall');
+  const tempInput = document.getElementById('num-temp');
+  const humInput = document.getElementById('num-humidity');
+  const dateInput = document.getElementById('input-date');
+
+  function triggerLiveRecalculation() {
+    clearTimeout(forecastDebounceTimer);
+    forecastDebounceTimer = setTimeout(() => {
+      runForecast();
+    }, 250);
+  }
+
+  // Rainfall listener
+  if (rainInput) {
+    rainInput.addEventListener('input', () => {
+      const val = Math.max(parseFloat(rainInput.value) || 0, 0);
+      updateRainAccumulationPreview(val);
+      triggerLiveRecalculation();
+    });
+  }
+
+  // Temperature listener
+  if (tempInput) {
+    tempInput.addEventListener('input', triggerLiveRecalculation);
+  }
+
+  // Humidity listener with strict [0, 100]% clamping
+  if (humInput) {
+    humInput.addEventListener('input', () => {
+      let val = parseFloat(humInput.value);
+      if (!isNaN(val)) {
+        if (val > 100) {
+          humInput.value = 100;
+          val = 100;
+        } else if (val < 0) {
+          humInput.value = 0;
+          val = 0;
+        }
+      }
+      triggerLiveRecalculation();
+    });
+  }
+
+  // Date change listener
+  if (dateInput) {
+    dateInput.addEventListener('change', () => {
+      runForecast();
+    });
+  }
+}
+
+// Update estimated 4-week rainfall accumulation preview in real time
+function updateRainAccumulationPreview(currentRain) {
+  const previewEl = document.getElementById('rain-accum-preview');
+  if (previewEl) {
+    // Current week + prior 3 weeks lags (lag1 + lag2 + lag3)
+    const estSum = (parseFloat(currentRain) || 0) + (currentLags.lag1 || 0) + (currentLags.lag2 || 0) + (currentLags.lag3 || 0);
+    previewEl.textContent = `Estimated 4W Accumulation: ${estSum.toFixed(1)} mm`;
+    if (estSum >= 250) {
+      previewEl.style.color = '#dc3545';
+      previewEl.style.fontWeight = '700';
+    } else if (estSum >= 150) {
+      previewEl.style.color = '#fd7e14';
+      previewEl.style.fontWeight = '700';
+    } else {
+      previewEl.style.color = 'var(--text)';
+      previewEl.style.opacity = '0.65';
+      previewEl.style.fontWeight = '400';
+    }
+  }
+}
+
+// 4. Initialize Surveillance Form & Load Wards
 async function initSurveillance() {
   try {
     const res = await fetch('/api/wards');
@@ -134,12 +213,14 @@ async function initSurveillance() {
     citySelect.addEventListener('change', () => {
       currentCity = citySelect.value;
       populateWards(currentCity);
+      runForecast();
     });
 
     wardSelect.addEventListener('change', () => {
       currentWardId = wardSelect.value;
       const w = wardsData.find(item => item.ward_id === currentWardId);
       if (w) syncWardBaseline(w);
+      runForecast();
     });
 
     dateInput.value = data.latest_date || '2025-12-29';
@@ -159,23 +240,41 @@ async function initSurveillance() {
 
 // Sync Form Numerical Inputs with Selected Ward's Baseline
 function syncWardBaseline(w) {
-  document.getElementById('num-rainfall').value = (w.latest_rainfall_mm || 20.0).toFixed(1);
-  document.getElementById('num-temp').value = (w.latest_temp_c || 28.0).toFixed(1);
-  document.getElementById('num-humidity').value = (w.latest_humidity_pct || 75.0).toFixed(1);
+  const rain = w.latest_rainfall_mm !== undefined ? w.latest_rainfall_mm : 20.0;
+  const temp = w.latest_temp_c !== undefined ? w.latest_temp_c : 28.0;
+  const hum = Math.min(Math.max(w.latest_humidity_pct !== undefined ? w.latest_humidity_pct : 75.0, 0), 100.0);
+
+  document.getElementById('num-rainfall').value = rain.toFixed(1);
+  document.getElementById('num-temp').value = temp.toFixed(1);
+  document.getElementById('num-humidity').value = hum.toFixed(1);
+
+  updateRainAccumulationPreview(rain);
 }
 
-// 4. Execute Outbreak Nowcast & Forecast
+// 5. Execute Outbreak Nowcast & Forecast
 async function runForecast() {
   const wardId = document.getElementById('select-ward').value;
   const city = document.getElementById('select-city').value;
   const dateVal = document.getElementById('input-date').value;
-  const rainfall = parseFloat(document.getElementById('num-rainfall').value) || 0;
+  const rainfall = Math.max(parseFloat(document.getElementById('num-rainfall').value) || 0, 0);
   const temp = parseFloat(document.getElementById('num-temp').value) || 25;
-  const humidity = parseFloat(document.getElementById('num-humidity').value) || 70;
+
+  // Strict humidity clamp: max 100%
+  let humidity = parseFloat(document.getElementById('num-humidity').value);
+  if (isNaN(humidity)) humidity = 70;
+  if (humidity > 100) {
+    humidity = 100;
+    document.getElementById('num-humidity').value = '100.0';
+  } else if (humidity < 0) {
+    humidity = 0;
+    document.getElementById('num-humidity').value = '0.0';
+  }
 
   const btn = document.getElementById('btn-run-forecast');
-  btn.textContent = 'Computing Inference...';
-  btn.disabled = true;
+  if (btn) {
+    btn.textContent = 'Computing Inference...';
+    btn.disabled = true;
+  }
 
   try {
     const res = await fetch('/api/predict', {
@@ -198,8 +297,10 @@ async function runForecast() {
   } catch (err) {
     console.error('Prediction failed:', err);
   } finally {
-    btn.textContent = 'Compute Outbreak Nowcast';
-    btn.disabled = false;
+    if (btn) {
+      btn.textContent = 'Compute Outbreak Nowcast';
+      btn.disabled = false;
+    }
   }
 }
 
@@ -251,12 +352,25 @@ function renderPredictionResults(pred) {
     advList.appendChild(li);
   });
 
+  // Store lags in global store for live preview
+  currentLags = {
+    lag1: pred.lag1,
+    lag2: pred.lag2,
+    lag3: pred.lag3,
+    lag4: pred.lag4,
+  };
+
   // Meteorological Lag Attribution Cards
   document.getElementById('lag-1').textContent = pred.lag1.toFixed(1) + ' mm';
   document.getElementById('lag-2').textContent = pred.lag2.toFixed(1) + ' mm';
   document.getElementById('lag-3').textContent = pred.lag3.toFixed(1) + ' mm';
   document.getElementById('lag-4').textContent = pred.lag4.toFixed(1) + ' mm';
   document.getElementById('lag-sum4w').textContent = pred.sum_4w.toFixed(1) + ' mm';
+
+  const rainInput = document.getElementById('num-rainfall');
+  if (rainInput) {
+    updateRainAccumulationPreview(rainInput.value);
+  }
 }
 
 // Render Longitudinal Trend Chart
@@ -345,7 +459,7 @@ async function renderWardCrossSection() {
   }
 }
 
-// 5. Vulnerability Matrix Tab: Search & CSV Export
+// 6. Vulnerability Matrix Tab: Search & CSV Export
 function setupTableSearchAndExport() {
   const searchInput = document.getElementById('search-vuln-table');
   const exportBtn = document.getElementById('btn-export-csv');
@@ -476,7 +590,7 @@ function exportTableToCSV() {
   document.body.removeChild(link);
 }
 
-// 6. Epidemiological Analytics Tab
+// 7. Epidemiological Analytics Tab
 async function loadAnalytics() {
   try {
     const res = await fetch('/api/analytics');
@@ -544,11 +658,38 @@ async function loadAnalytics() {
   }
 }
 
-// 7. Action Protocols Threshold Simulator
+// 8. Action Protocols Threshold Simulator with Real-Time Listeners
+function setupProtocolSimulatorListeners() {
+  const rain4w = document.getElementById('sim-rain-4w');
+  const temp = document.getElementById('sim-temp');
+  const hum = document.getElementById('sim-hum');
+
+  if (hum) {
+    hum.addEventListener('input', () => {
+      let val = parseFloat(hum.value);
+      if (val > 100) hum.value = 100;
+      if (val < 0) hum.value = 0;
+      window.runThresholdSimulator();
+    });
+  }
+
+  if (rain4w) rain4w.addEventListener('input', window.runThresholdSimulator);
+  if (temp) temp.addEventListener('input', window.runThresholdSimulator);
+}
+
 window.runThresholdSimulator = function () {
   const rain = parseFloat(document.getElementById('sim-rain-4w').value) || 0;
   const temp = parseFloat(document.getElementById('sim-temp').value) || 25;
-  const hum = parseFloat(document.getElementById('sim-hum').value) || 70;
+
+  let hum = parseFloat(document.getElementById('sim-hum').value);
+  if (isNaN(hum)) hum = 70;
+  if (hum > 100) {
+    hum = 100;
+    document.getElementById('sim-hum').value = '100.0';
+  } else if (hum < 0) {
+    hum = 0;
+    document.getElementById('sim-hum').value = '0.0';
+  }
 
   const isHighRain = rain >= 250;
   const isIdealTemp = temp >= 26 && temp <= 33;
@@ -562,12 +703,12 @@ window.runThresholdSimulator = function () {
     resultBox.style.borderLeftColor = '#dc3545';
     resultTitle.textContent = 'CRITICAL OUTBREAK ALERT';
     resultTitle.style.color = '#dc3545';
-    resultText.textContent = 'TRIPLE-THRESHOLD EXCEEDED: High cumulative rainfall (' + rain + ' mm) with optimal temperature and >80% humidity. Severe probability of explosive vector emergence in 14-21 days. Mobilize vehicle-mounted thermal fogging within 48 hours.';
+    resultText.textContent = `TRIPLE-THRESHOLD EXCEEDED: High cumulative rainfall (${rain} mm) with optimal temperature (${temp}°C) and ${hum}% humidity. Severe probability of explosive vector emergence in 14-21 days. Mobilize vehicle-mounted thermal fogging within 48 hours.`;
   } else if ((rain >= 180 && isIdealTemp) || (isHighHum && rain >= 150)) {
     resultBox.style.borderLeftColor = '#fd7e14';
     resultTitle.textContent = 'HIGH RISK ADVISORY';
     resultTitle.style.color = '#fd7e14';
-    resultText.textContent = 'PRE-OUTBREAK VECTOR AMPLIFICATION: Extensive aquatic breeding reservoirs detected. Public health teams have a 2 to 3 week lead time to apply biological larvicide (Bti) to all open drains before adults mature.';
+    resultText.textContent = `PRE-OUTBREAK VECTOR AMPLIFICATION: Extensive aquatic breeding reservoirs detected (${rain} mm rain, ${hum}% humidity). Public health teams have a 2 to 3 week lead time to apply biological larvicide (Bti) to all open drains before adults mature.`;
   } else if (rain >= 80 || (hum >= 70 && temp >= 22)) {
     resultBox.style.borderLeftColor = '#ffc107';
     resultTitle.textContent = 'ELEVATED RISK WATCH';
@@ -581,7 +722,7 @@ window.runThresholdSimulator = function () {
   }
 };
 
-// 8. Model Telemetry Tab
+// 9. Model Telemetry Tab
 async function loadTelemetry() {
   try {
     const res = await fetch('/api/telemetry');
