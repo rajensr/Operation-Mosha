@@ -75,9 +75,9 @@ function setupNavigation() {
 // 2. 1-Click Meteorological Scenario Presets
 function setupScenarioPresets() {
   const presets = {
-    monsoon: { rain: 110.0, temp: 31.5, hum: 88.0 },
-    premonsoon: { rain: 35.0, temp: 32.0, hum: 75.0 },
-    winter: { rain: 0.0, temp: 22.0, hum: 58.0 },
+    monsoon: { date: '2026-07-20', rain: 110.0, temp: 31.5, hum: 88.0 },
+    premonsoon: { date: '2026-05-18', rain: 35.0, temp: 32.0, hum: 75.0 },
+    winter: { date: '2025-12-29', rain: 0.0, temp: 22.0, hum: 58.0 },
   };
 
   const chips = document.querySelectorAll('.preset-chip');
@@ -89,6 +89,10 @@ function setupScenarioPresets() {
       const presetKey = chip.dataset.preset;
       const values = presets[presetKey];
       if (values) {
+        if (values.date) {
+          const dateEl = document.getElementById('input-date');
+          if (dateEl) dateEl.value = values.date;
+        }
         document.getElementById('num-rainfall').value = values.rain.toFixed(1);
         document.getElementById('num-temp').value = values.temp.toFixed(1);
         document.getElementById('num-humidity').value = Math.min(values.hum, 100.0).toFixed(1);

@@ -209,9 +209,20 @@ def predict():
         if score_df.empty:
             score_df = ward_df.iloc[[0]].copy()
         last_idx = score_df.index[-1]
+        orig_rain = float(score_df.loc[last_idx, "rainfall_mm"])
         score_df.loc[last_idx, "rainfall_mm"] = sim_rainfall
         score_df.loc[last_idx, "avg_temp_c"] = sim_avg_temp
         score_df.loc[last_idx, "relative_humidity_pct"] = sim_humidity
+
+        # If user is simulating a custom weather shock on an observation week,
+        # propagate the rainfall anomaly into the preceding 4-week window so biological
+        # accumulation features (correlation +0.8066) respond dynamically to simulated shocks.
+        if abs(sim_rainfall - orig_rain) > 5.0 and len(score_df) > 1:
+            scale_factor = sim_rainfall / max(orig_rain, 15.0)
+            for k in range(1, min(5, len(score_df))):
+                prev_pos = len(score_df) - 1 - k
+                prev_val = float(score_df.iloc[prev_pos]["rainfall_mm"])
+                score_df.iloc[prev_pos, score_df.columns.get_loc("rainfall_mm")] = max(prev_val * scale_factor, 0.0)
 
     # Compute multi-week lags
     n_rows = len(score_df)
