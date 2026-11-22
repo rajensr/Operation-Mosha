@@ -1,9 +1,9 @@
 /**
- * Single-Page Application Client Logic for Operation-Mosha.
+ * Operation-Mosha | Public Health Surveillance Client
  * Zero Emojis Enforced | Public Health Administrative Copy | Interactive Plotly Charts
  */
 
-// Plotly Dark Theme Config
+// Plotly Dark Theme Configuration
 const PLOTLY_THEME = {
   paper_bgcolor: 'rgb(19, 17, 17)',
   plot_bgcolor: 'rgb(19, 17, 17)',
@@ -25,11 +25,14 @@ const PLOTLY_THEME = {
 let wardsData = [];
 let currentWardId = 'CCC_Ward_01';
 let currentCity = 'Chittagong';
+let vulnerabilityData = [];
 
-// DOM Elements
+// Initialize SPA on DOM Ready
 document.addEventListener('DOMContentLoaded', () => {
   setupNavigation();
   initSurveillance();
+  setupScenarioPresets();
+  setupTableSearchAndExport();
   loadVulnerabilityMatrix();
   loadAnalytics();
   loadTelemetry();
@@ -52,21 +55,46 @@ function setupNavigation() {
     // Resize Plotly charts when tab becomes visible
     setTimeout(() => {
       window.dispatchEvent(new Event('resize'));
-    }, 100);
+    }, 120);
   }
 
   navButtons.forEach(btn => {
     btn.addEventListener('click', () => switchTab(btn.dataset.target));
   });
 
-  // Handle initial hash routing
   const initialHash = window.location.hash.replace('#', '') || 'surveillance';
   if (document.getElementById(initialHash)) {
     switchTab(initialHash);
   }
 }
 
-// 2. Initialize Surveillance Form & Load Wards
+// 2. 1-Click Meteorological Scenario Presets
+function setupScenarioPresets() {
+  const presets = {
+    monsoon: { rain: 110.0, temp: 31.5, hum: 88.0 },
+    premonsoon: { rain: 35.0, temp: 32.0, hum: 75.0 },
+    winter: { rain: 0.0, temp: 22.0, hum: 58.0 },
+  };
+
+  const chips = document.querySelectorAll('.preset-chip');
+  chips.forEach(chip => {
+    chip.addEventListener('click', () => {
+      chips.forEach(c => c.classList.remove('active'));
+      chip.classList.add('active');
+
+      const presetKey = chip.dataset.preset;
+      const values = presets[presetKey];
+      if (values) {
+        document.getElementById('num-rainfall').value = values.rain.toFixed(1);
+        document.getElementById('num-temp').value = values.temp.toFixed(1);
+        document.getElementById('num-humidity').value = values.hum.toFixed(1);
+        runForecast();
+      }
+    });
+  });
+}
+
+// 3. Initialize Surveillance Form & Load Wards
 async function initSurveillance() {
   try {
     const res = await fetch('/api/wards');
@@ -114,18 +142,15 @@ async function initSurveillance() {
       if (w) syncWardBaseline(w);
     });
 
-    // Set initial date to latest available date
     dateInput.value = data.latest_date || '2025-12-29';
-
     populateWards(data.cities[0]);
 
-    // Handle Form Submit
     document.getElementById('forecast-form').addEventListener('submit', (e) => {
       e.preventDefault();
       runForecast();
     });
 
-    // Initial Forecast Run
+    // Run Initial Nowcast
     runForecast();
   } catch (err) {
     console.error('Failed to load wards data:', err);
@@ -134,12 +159,12 @@ async function initSurveillance() {
 
 // Sync Form Numerical Inputs with Selected Ward's Baseline
 function syncWardBaseline(w) {
-  document.getElementById('num-rainfall').value = w.latest_rainfall_mm || 20.0;
-  document.getElementById('num-temp').value = w.latest_temp_c || 28.0;
-  document.getElementById('num-humidity').value = w.latest_humidity_pct || 75.0;
+  document.getElementById('num-rainfall').value = (w.latest_rainfall_mm || 20.0).toFixed(1);
+  document.getElementById('num-temp').value = (w.latest_temp_c || 28.0).toFixed(1);
+  document.getElementById('num-humidity').value = (w.latest_humidity_pct || 75.0).toFixed(1);
 }
 
-// 3. Execute Forecast & Nowcast
+// 4. Execute Outbreak Nowcast & Forecast
 async function runForecast() {
   const wardId = document.getElementById('select-ward').value;
   const city = document.getElementById('select-city').value;
@@ -169,7 +194,7 @@ async function runForecast() {
     const pred = await res.json();
     renderPredictionResults(pred);
     renderLongitudinalTrend(wardId, pred.date);
-    renderWardCrossSection(pred.date);
+    renderWardCrossSection();
   } catch (err) {
     console.error('Prediction failed:', err);
   } finally {
@@ -180,7 +205,6 @@ async function runForecast() {
 
 // Render Prediction KPIs & Advisory
 function renderPredictionResults(pred) {
-  // Update KPI Cards
   const kpiTier = document.getElementById('kpi-tier');
   const kpiCases = document.getElementById('kpi-cases');
   const kpiProb = document.getElementById('kpi-prob');
@@ -204,7 +228,7 @@ function renderPredictionResults(pred) {
 
   statusBadge.textContent = pred.is_future ? 'FUTURE PROJECTION' : 'NOWCAST MONITOR';
 
-  // Update Public Health Action Advisory Card
+  // Update Public Health Action Advisory Box
   const advBox = document.getElementById('advisory-box');
   const advBadge = document.getElementById('advisory-badge');
   const advLead = document.getElementById('advisory-lead');
@@ -215,6 +239,7 @@ function renderPredictionResults(pred) {
   advBox.style.borderLeftColor = pred.risk_color;
   advBadge.textContent = pred.advisory.badge;
   advBadge.style.color = pred.risk_color;
+  advBadge.style.borderColor = pred.risk_color;
   advLead.textContent = pred.advisory.lead_time;
   advTitle.textContent = pred.advisory.title;
   advSummary.textContent = pred.advisory.summary;
@@ -226,7 +251,7 @@ function renderPredictionResults(pred) {
     advList.appendChild(li);
   });
 
-  // Driver Attribution Metrics
+  // Meteorological Lag Attribution Cards
   document.getElementById('lag-1').textContent = pred.lag1.toFixed(1) + ' mm';
   document.getElementById('lag-2').textContent = pred.lag2.toFixed(1) + ' mm';
   document.getElementById('lag-3').textContent = pred.lag3.toFixed(1) + ' mm';
@@ -234,7 +259,7 @@ function renderPredictionResults(pred) {
   document.getElementById('lag-sum4w').textContent = pred.sum_4w.toFixed(1) + ' mm';
 }
 
-// Render Longitudinal Trend Chart (Rainfall vs. Cases)
+// Render Longitudinal Trend Chart
 async function renderLongitudinalTrend(wardId, selectedDate) {
   try {
     const res = await fetch(`/api/history?ward_id=${wardId}`);
@@ -264,7 +289,7 @@ async function renderLongitudinalTrend(wardId, selectedDate) {
 
     const layout = JSON.parse(JSON.stringify(PLOTLY_THEME));
     layout.height = 380;
-    layout.margin = { l: 40, r: 40, t: 20, b: 30 };
+    layout.margin = { l: 45, r: 45, t: 20, b: 35 };
     layout.hovermode = 'x unified';
     layout.legend = { orientation: 'h', y: 1.05, x: 1, xanchor: 'right' };
     layout.yaxis.title = 'Weekly Dengue Cases';
@@ -294,7 +319,7 @@ async function renderLongitudinalTrend(wardId, selectedDate) {
   }
 }
 
-// Render City Ward Cross-Section Comparison Bar Chart
+// Render Ward Cross-Section Comparison Bar Chart
 async function renderWardCrossSection() {
   try {
     const topWards = wardsData.slice(0, 15).sort((a, b) => a.latest_cases - b.latest_cases);
@@ -311,7 +336,7 @@ async function renderWardCrossSection() {
 
     const layout = JSON.parse(JSON.stringify(PLOTLY_THEME));
     layout.height = 380;
-    layout.margin = { l: 90, r: 20, t: 20, b: 30 };
+    layout.margin = { l: 90, r: 20, t: 20, b: 35 };
     layout.xaxis.title = 'Observed Active Cases';
 
     Plotly.newPlot('chart-cross-section', [trace], layout, { responsive: true, displayModeBar: false });
@@ -320,39 +345,42 @@ async function renderWardCrossSection() {
   }
 }
 
-// 4. Vulnerability Matrix Tab
+// 5. Vulnerability Matrix Tab: Search & CSV Export
+function setupTableSearchAndExport() {
+  const searchInput = document.getElementById('search-vuln-table');
+  const exportBtn = document.getElementById('btn-export-csv');
+
+  if (searchInput) {
+    searchInput.addEventListener('input', () => {
+      const query = searchInput.value.toLowerCase().trim();
+      filterVulnerabilityTable(query);
+    });
+  }
+
+  if (exportBtn) {
+    exportBtn.addEventListener('click', () => {
+      exportTableToCSV();
+    });
+  }
+}
+
 async function loadVulnerabilityMatrix() {
   try {
     const res = await fetch('/api/vulnerability');
     const data = await res.json();
+    vulnerabilityData = data.wards || [];
 
     document.getElementById('vuln-total-wards').textContent = data.total_wards;
     document.getElementById('vuln-high-count').textContent = data.high_vulnerability_count;
     document.getElementById('vuln-avg-drainage').textContent = data.city_avg_waterlog.toFixed(2);
     document.getElementById('vuln-avg-sanitation').textContent = data.city_avg_sanitation.toFixed(2);
 
-    // Populate Table
-    const tbody = document.getElementById('table-vuln-body');
-    tbody.innerHTML = '';
-    data.wards.forEach(w => {
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td><strong>#${w.rank}</strong></td>
-        <td><strong>${w.ward_id}</strong></td>
-        <td>${w.city}</td>
-        <td><span style="color: rgb(223, 255, 82); font-weight: 700;">${w.vulnerability_score.toFixed(3)}</span></td>
-        <td>${w.water_logging_risk_index.toFixed(2)}</td>
-        <td>${w.sanitation_score.toFixed(2)}</td>
-        <td>${w.population_density_sqkm.toLocaleString()}</td>
-        <td><strong>${w.latest_cases}</strong></td>
-      `;
-      tbody.appendChild(tr);
-    });
+    renderVulnerabilityTable(vulnerabilityData);
 
-    // Render Scatter Chart: Drainage Index vs Population Density
-    const xDrain = data.wards.map(w => w.water_logging_risk_index);
-    const yPop = data.wards.map(w => w.population_density_sqkm);
-    const hoverText = data.wards.map(w => `${w.ward_id} | Score: ${w.vulnerability_score}`);
+    // Scatter Chart: Drainage Index vs Population Density
+    const xDrain = vulnerabilityData.map(w => w.water_logging_risk_index);
+    const yPop = vulnerabilityData.map(w => w.population_density_sqkm);
+    const hoverText = vulnerabilityData.map(w => `${w.ward_id} | Score: ${w.vulnerability_score}`);
 
     const traceScatter = {
       x: xDrain,
@@ -362,7 +390,7 @@ async function loadVulnerabilityMatrix() {
       text: hoverText,
       marker: {
         size: 10,
-        color: data.wards.map(w => w.vulnerability_score),
+        color: vulnerabilityData.map(w => w.vulnerability_score),
         colorscale: [[0, '#11998e'], [0.5, '#DFFF52'], [1, '#dc3545']],
         showscale: true,
         colorbar: {
@@ -385,13 +413,75 @@ async function loadVulnerabilityMatrix() {
   }
 }
 
-// 5. Epidemiological Analytics Tab
+function renderVulnerabilityTable(items) {
+  const tbody = document.getElementById('table-vuln-body');
+  tbody.innerHTML = '';
+
+  if (items.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; opacity: 0.6; padding: 24px;">No matching wards found.</td></tr>';
+    return;
+  }
+
+  items.forEach(w => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><strong>#${w.rank}</strong></td>
+      <td><strong>${w.ward_id}</strong></td>
+      <td>${w.city}</td>
+      <td><span style="color: rgb(223, 255, 82); font-weight: 700;">${w.vulnerability_score.toFixed(3)}</span></td>
+      <td>${w.water_logging_risk_index.toFixed(2)}</td>
+      <td>${w.sanitation_score.toFixed(2)}</td>
+      <td>${w.population_density_sqkm.toLocaleString()}</td>
+      <td><strong>${w.latest_cases}</strong></td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+function filterVulnerabilityTable(query) {
+  const filtered = vulnerabilityData.filter(w =>
+    w.ward_id.toLowerCase().includes(query) ||
+    w.city.toLowerCase().includes(query)
+  );
+  renderVulnerabilityTable(filtered);
+}
+
+function exportTableToCSV() {
+  const query = (document.getElementById('search-vuln-table')?.value || '').toLowerCase().trim();
+  const exportItems = query
+    ? vulnerabilityData.filter(w => w.ward_id.toLowerCase().includes(query) || w.city.toLowerCase().includes(query))
+    : vulnerabilityData;
+
+  const headers = ['Rank', 'Ward_ID', 'City', 'Vulnerability_Score', 'Water_Logging_Index', 'Sanitation_Score', 'Population_Density_sqkm', 'Active_Cases'];
+  const rows = exportItems.map(w => [
+    w.rank,
+    w.ward_id,
+    w.city,
+    w.vulnerability_score,
+    w.water_logging_risk_index,
+    w.sanitation_score,
+    w.population_density_sqkm,
+    w.latest_cases,
+  ]);
+
+  const csvContent = 'data:text/csv;charset=utf-8,' +
+    [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
+
+  const encodedUri = encodeURI(csvContent);
+  const link = document.createElement('a');
+  link.setAttribute('href', encodedUri);
+  link.setAttribute('download', `municipal_dispatch_matrix_${new Date().toISOString().slice(0, 10)}.csv`);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
+
+// 6. Epidemiological Analytics Tab
 async function loadAnalytics() {
   try {
     const res = await fetch('/api/analytics');
     const data = await res.json();
 
-    // 1. Monthly Seasonality Chart
     const mNames = data.monthly_seasonality.map(m => m.month_name);
     const mCases = data.monthly_seasonality.map(m => m.dengue_cases);
     const mRain = data.monthly_seasonality.map(m => m.rainfall_mm);
@@ -418,7 +508,7 @@ async function loadAnalytics() {
 
     const mLayout = JSON.parse(JSON.stringify(PLOTLY_THEME));
     mLayout.height = 390;
-    mLayout.margin = { l: 40, r: 40, t: 20, b: 30 };
+    mLayout.margin = { l: 45, r: 45, t: 20, b: 35 };
     mLayout.legend = { orientation: 'h', y: 1.05, x: 1, xanchor: 'right' };
     mLayout.yaxis.title = 'Average Dengue Cases';
     mLayout.yaxis2 = {
@@ -431,7 +521,7 @@ async function loadAnalytics() {
 
     Plotly.newPlot('chart-monthly-seasonality', [traceRain, traceCases], mLayout, { responsive: true, displayModeBar: false });
 
-    // 2. Pearson Correlation Bar Chart
+    // Pearson Correlation Bar Chart
     const corrSorted = data.correlations.sort((a, b) => a.correlation - b.correlation);
     const traceCorr = {
       x: corrSorted.map(c => c.correlation),
@@ -445,7 +535,7 @@ async function loadAnalytics() {
 
     const cLayout = JSON.parse(JSON.stringify(PLOTLY_THEME));
     cLayout.height = 390;
-    cLayout.margin = { l: 140, r: 20, t: 20, b: 30 };
+    cLayout.margin = { l: 140, r: 20, t: 20, b: 35 };
     cLayout.xaxis.title = 'Pearson Correlation with Dengue Cases';
 
     Plotly.newPlot('chart-correlations', [traceCorr], cLayout, { responsive: true, displayModeBar: false });
@@ -454,7 +544,7 @@ async function loadAnalytics() {
   }
 }
 
-// 6. Action Protocols Tab Threshold Simulator
+// 7. Action Protocols Threshold Simulator
 window.runThresholdSimulator = function () {
   const rain = parseFloat(document.getElementById('sim-rain-4w').value) || 0;
   const temp = parseFloat(document.getElementById('sim-temp').value) || 25;
@@ -491,7 +581,7 @@ window.runThresholdSimulator = function () {
   }
 };
 
-// 7. Telemetry Tab
+// 8. Model Telemetry Tab
 async function loadTelemetry() {
   try {
     const res = await fetch('/api/telemetry');
