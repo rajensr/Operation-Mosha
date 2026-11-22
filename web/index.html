@@ -113,7 +113,7 @@
             <div class="form-group">
               <label class="form-label" for="num-rainfall">Current Week Rain</label>
               <div class="input-group">
-                <input type="number" id="num-rainfall" class="form-control" min="0" max="600" step="1.0" value="20.0">
+                <input type="number" id="num-rainfall" class="form-control" min="0" max="600" step="any" value="20.0">
                 <span class="input-group-addon">mm</span>
               </div>
               <div id="rain-accum-preview" class="form-hint">Estimated 4W Accumulation: calculating...</div>
@@ -122,7 +122,7 @@
             <div class="form-group">
               <label class="form-label" for="num-temp">Average Temperature</label>
               <div class="input-group">
-                <input type="number" id="num-temp" class="form-control" min="10" max="45" step="0.2" value="28.0">
+                <input type="number" id="num-temp" class="form-control" min="10" max="45" step="any" value="28.0">
                 <span class="input-group-addon">deg C</span>
               </div>
             </div>
@@ -130,7 +130,7 @@
             <div class="form-group">
               <label class="form-label" for="num-humidity">Relative Humidity</label>
               <div class="input-group">
-                <input type="number" id="num-humidity" class="form-control" min="0" max="100" step="1.0" value="75.0">
+                <input type="number" id="num-humidity" class="form-control" min="0" max="100" step="any" value="75.0">
                 <span class="input-group-addon">%</span>
               </div>
               <div class="form-hint">Physical maximum is 100%</div>
@@ -412,7 +412,7 @@
           <div class="form-group">
             <label class="form-label" for="sim-rain-4w">Cumulative 4-Week Rain</label>
             <div class="input-group">
-              <input type="number" id="sim-rain-4w" class="form-control" min="0" max="800" step="10" value="260">
+              <input type="number" id="sim-rain-4w" class="form-control" min="0" max="800" step="any" value="260">
               <span class="input-group-addon">mm</span>
             </div>
             <div class="form-hint">Danger threshold: &ge; 250 mm</div>
@@ -421,7 +421,7 @@
           <div class="form-group">
             <label class="form-label" for="sim-temp">Mean Temperature</label>
             <div class="input-group">
-              <input type="number" id="sim-temp" class="form-control" min="15" max="45" step="0.5" value="30.5">
+              <input type="number" id="sim-temp" class="form-control" min="15" max="45" step="any" value="30.5">
               <span class="input-group-addon">deg C</span>
             </div>
             <div class="form-hint">Optimal transmission band: 26 - 32 deg C</div>
@@ -430,7 +430,7 @@
           <div class="form-group">
             <label class="form-label" for="sim-hum">Relative Humidity</label>
             <div class="input-group">
-              <input type="number" id="sim-hum" class="form-control" min="0" max="100" step="1" value="86">
+              <input type="number" id="sim-hum" class="form-control" min="0" max="100" step="any" value="86">
               <span class="input-group-addon">%</span>
             </div>
             <div class="form-hint">Physical maximum: 100% (Alert: &ge; 80%)</div>

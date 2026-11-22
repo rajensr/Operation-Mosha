@@ -162,22 +162,48 @@ def predict():
 
     ref_row = ward_df.iloc[-1]
     if is_future:
-        score_df = ward_df.copy()
-        future_row = {
-            "date": target_dt,
-            "city": city,
-            "ward_id": ward_id,
-            "population_density_sqkm": ref_row["population_density_sqkm"],
-            "water_logging_risk_index": ref_row["water_logging_risk_index"],
-            "sanitation_score": ref_row["sanitation_score"],
-            "avg_temp_c": sim_avg_temp,
-            "max_temp_c": sim_avg_temp + 3.5,
-            "min_temp_c": sim_avg_temp - 3.5,
-            "rainfall_mm": sim_rainfall,
-            "relative_humidity_pct": sim_humidity,
-            "dengue_cases": 0,
-        }
-        score_df = pd.concat([score_df, pd.DataFrame([future_row])], ignore_index=True)
+        # For future dates beyond historical records, synthesize preceding 4 weeks using
+        # ward-specific seasonal climatology scaled by simulated weather anomalies.
+        # This preserves biological lag attribution (+0.8066 correlation with 4-week accumulation).
+        hist_df = ward_df.copy()
+        hist_df["week"] = hist_df["date"].dt.isocalendar().week
+        climatology = hist_df.groupby("week")[["rainfall_mm", "avg_temp_c", "relative_humidity_pct"]].mean()
+
+        target_week = target_dt.isocalendar().week
+        norm_rain_target = float(climatology.loc[target_week, "rainfall_mm"]) if target_week in climatology.index else 20.0
+        rain_scale_ratio = sim_rainfall / max(norm_rain_target, 10.0)
+
+        synth_rows = []
+        for k in range(4, 0, -1):
+            prev_dt = target_dt - pd.Timedelta(weeks=k)
+            pwk = prev_dt.isocalendar().week
+            base_rain = float(climatology.loc[pwk, "rainfall_mm"]) if pwk in climatology.index else sim_rainfall
+            base_temp = float(climatology.loc[pwk, "avg_temp_c"]) if pwk in climatology.index else sim_avg_temp
+            base_hum = float(climatology.loc[pwk, "relative_humidity_pct"]) if pwk in climatology.index else sim_humidity
+
+            synth_row = ref_row.to_dict()
+            synth_row["date"] = prev_dt
+            synth_row["rainfall_mm"] = max(base_rain * rain_scale_ratio, 0.0)
+            synth_row["avg_temp_c"] = base_temp
+            synth_row["max_temp_c"] = base_temp + 3.5
+            synth_row["min_temp_c"] = base_temp - 3.5
+            synth_row["relative_humidity_pct"] = min(max(base_hum, 0.0), 100.0)
+            synth_row["dengue_cases"] = 0
+            synth_rows.append(synth_row)
+
+        future_row = ref_row.to_dict()
+        future_row["date"] = target_dt
+        future_row["city"] = city
+        future_row["ward_id"] = ward_id
+        future_row["avg_temp_c"] = sim_avg_temp
+        future_row["max_temp_c"] = sim_avg_temp + 3.5
+        future_row["min_temp_c"] = sim_avg_temp - 3.5
+        future_row["rainfall_mm"] = sim_rainfall
+        future_row["relative_humidity_pct"] = sim_humidity
+        future_row["dengue_cases"] = 0
+        synth_rows.append(future_row)
+
+        score_df = pd.concat([ward_df, pd.DataFrame(synth_rows)], ignore_index=True)
     else:
         score_df = ward_df[ward_df["date"] <= target_dt].copy()
         if score_df.empty:

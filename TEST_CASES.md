@@ -38,9 +38,10 @@ Portal URL: http://localhost:8000 (or http://127.0.0.1:8000)
   5. Set **Average Temperature:** `31.5 deg C`
   6. Set **Relative Humidity:** `92.0 %`
 * **Expected Result:**
-  - **Risk Tier:** Escalates to `Critical` or `High` (Red/Orange alert badge).
-  - **Expected Caseload:** Significant case spike projected.
-  - **Outbreak Probability:** Exceeds 70-85%.
+  - **Risk Tier:** `Critical` (Red alert badge).
+  - **Expected Caseload:** Projected spike of ~10.3 cases/week.
+  - **Outbreak Probability:** Exceeds 99.0% (P = 0.9978).
+  - **Attribution Cards:** 4-Week Cumulative Rain reflects active monsoon accumulation (~578 mm) derived from ward-specific seasonal climatology scaled by the surge intensity.
   - **Operational Advisory:** Advises emergency biological larviciding (*Bacillus thuringiensis israelensis* / *Bti*) and vehicle-mounted thermal fogging within 48 hours.
   - **Longitudinal Trend Chart:** Re-renders with the simulated projection point plotted at the future date.
 
