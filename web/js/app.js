@@ -1,0 +1,513 @@
+/**
+ * Single-Page Application Client Logic for Operation-Mosha.
+ * Zero Emojis Enforced | Public Health Administrative Copy | Interactive Plotly Charts
+ */
+
+// Plotly Dark Theme Config
+const PLOTLY_THEME = {
+  paper_bgcolor: 'rgb(19, 17, 17)',
+  plot_bgcolor: 'rgb(19, 17, 17)',
+  font: { family: 'Inter', color: 'rgb(247, 255, 229)', size: 12 },
+  xaxis: {
+    gridcolor: 'rgba(223, 255, 82, 0.08)',
+    zerolinecolor: 'rgba(223, 255, 82, 0.15)',
+    tickfont: { color: 'rgb(247, 255, 229)' },
+  },
+  yaxis: {
+    gridcolor: 'rgba(223, 255, 82, 0.08)',
+    zerolinecolor: 'rgba(223, 255, 82, 0.15)',
+    tickfont: { color: 'rgb(247, 255, 229)' },
+  },
+  colorway: ['#DFFF52', '#28a745', '#fd7e14', '#dc3545', '#11998e'],
+};
+
+// Global Store
+let wardsData = [];
+let currentWardId = 'CCC_Ward_01';
+let currentCity = 'Chittagong';
+
+// DOM Elements
+document.addEventListener('DOMContentLoaded', () => {
+  setupNavigation();
+  initSurveillance();
+  loadVulnerabilityMatrix();
+  loadAnalytics();
+  loadTelemetry();
+});
+
+// 1. Single-Page Navigation Tabs
+function setupNavigation() {
+  const navButtons = document.querySelectorAll('.nav-btn');
+  const views = document.querySelectorAll('.spa-view');
+
+  function switchTab(targetId) {
+    navButtons.forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.target === targetId);
+    });
+    views.forEach(view => {
+      view.classList.toggle('active', view.id === targetId);
+    });
+    window.location.hash = targetId;
+
+    // Resize Plotly charts when tab becomes visible
+    setTimeout(() => {
+      window.dispatchEvent(new Event('resize'));
+    }, 100);
+  }
+
+  navButtons.forEach(btn => {
+    btn.addEventListener('click', () => switchTab(btn.dataset.target));
+  });
+
+  // Handle initial hash routing
+  const initialHash = window.location.hash.replace('#', '') || 'surveillance';
+  if (document.getElementById(initialHash)) {
+    switchTab(initialHash);
+  }
+}
+
+// 2. Initialize Surveillance Form & Load Wards
+async function initSurveillance() {
+  try {
+    const res = await fetch('/api/wards');
+    const data = await res.json();
+    wardsData = data.wards || [];
+
+    const citySelect = document.getElementById('select-city');
+    const wardSelect = document.getElementById('select-ward');
+    const dateInput = document.getElementById('input-date');
+
+    // Populate Cities
+    citySelect.innerHTML = '';
+    data.cities.forEach(city => {
+      const opt = document.createElement('option');
+      opt.value = city;
+      opt.textContent = city;
+      citySelect.appendChild(opt);
+    });
+
+    // Populate Wards
+    function populateWards(selectedCity) {
+      wardSelect.innerHTML = '';
+      const filtered = wardsData.filter(w => w.city === selectedCity);
+      filtered.forEach(w => {
+        const opt = document.createElement('option');
+        opt.value = w.ward_id;
+        opt.textContent = w.ward_id;
+        wardSelect.appendChild(opt);
+      });
+      if (filtered.length > 0) {
+        currentWardId = filtered[0].ward_id;
+        wardSelect.value = currentWardId;
+        syncWardBaseline(filtered[0]);
+      }
+    }
+
+    citySelect.addEventListener('change', () => {
+      currentCity = citySelect.value;
+      populateWards(currentCity);
+    });
+
+    wardSelect.addEventListener('change', () => {
+      currentWardId = wardSelect.value;
+      const w = wardsData.find(item => item.ward_id === currentWardId);
+      if (w) syncWardBaseline(w);
+    });
+
+    // Set initial date to latest available date
+    dateInput.value = data.latest_date || '2025-12-29';
+
+    populateWards(data.cities[0]);
+
+    // Handle Form Submit
+    document.getElementById('forecast-form').addEventListener('submit', (e) => {
+      e.preventDefault();
+      runForecast();
+    });
+
+    // Initial Forecast Run
+    runForecast();
+  } catch (err) {
+    console.error('Failed to load wards data:', err);
+  }
+}
+
+// Sync Form Numerical Inputs with Selected Ward's Baseline
+function syncWardBaseline(w) {
+  document.getElementById('num-rainfall').value = w.latest_rainfall_mm || 20.0;
+  document.getElementById('num-temp').value = w.latest_temp_c || 28.0;
+  document.getElementById('num-humidity').value = w.latest_humidity_pct || 75.0;
+}
+
+// 3. Execute Forecast & Nowcast
+async function runForecast() {
+  const wardId = document.getElementById('select-ward').value;
+  const city = document.getElementById('select-city').value;
+  const dateVal = document.getElementById('input-date').value;
+  const rainfall = parseFloat(document.getElementById('num-rainfall').value) || 0;
+  const temp = parseFloat(document.getElementById('num-temp').value) || 25;
+  const humidity = parseFloat(document.getElementById('num-humidity').value) || 70;
+
+  const btn = document.getElementById('btn-run-forecast');
+  btn.textContent = 'Computing Inference...';
+  btn.disabled = true;
+
+  try {
+    const res = await fetch('/api/predict', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ward_id: wardId,
+        city: city,
+        date: dateVal,
+        rainfall_mm: rainfall,
+        avg_temp_c: temp,
+        relative_humidity_pct: humidity,
+      }),
+    });
+
+    const pred = await res.json();
+    renderPredictionResults(pred);
+    renderLongitudinalTrend(wardId, pred.date);
+    renderWardCrossSection(pred.date);
+  } catch (err) {
+    console.error('Prediction failed:', err);
+  } finally {
+    btn.textContent = 'Compute Outbreak Nowcast';
+    btn.disabled = false;
+  }
+}
+
+// Render Prediction KPIs & Advisory
+function renderPredictionResults(pred) {
+  // Update KPI Cards
+  const kpiTier = document.getElementById('kpi-tier');
+  const kpiCases = document.getElementById('kpi-cases');
+  const kpiProb = document.getElementById('kpi-prob');
+  const kpiVuln = document.getElementById('kpi-vuln');
+  const statusBadge = document.getElementById('surveillance-status-badge');
+
+  kpiTier.textContent = pred.risk_tier;
+  kpiTier.style.color = pred.risk_color;
+  document.getElementById('card-tier').style.borderLeftColor = pred.risk_color;
+
+  kpiCases.textContent = pred.expected_cases.toFixed(2);
+  kpiProb.textContent = (pred.p_nonzero * 100).toFixed(1) + '%';
+  kpiVuln.textContent = pred.vulnerability_index.toFixed(2);
+
+  document.getElementById('kpi-cases-sub').textContent = pred.is_future
+    ? 'Status: Future Projection'
+    : 'Status: Calibrated Hurdle Inference';
+
+  document.getElementById('kpi-density').textContent =
+    'Density: ' + pred.population_density.toLocaleString() + ' /km2';
+
+  statusBadge.textContent = pred.is_future ? 'FUTURE PROJECTION' : 'NOWCAST MONITOR';
+
+  // Update Public Health Action Advisory Card
+  const advBox = document.getElementById('advisory-box');
+  const advBadge = document.getElementById('advisory-badge');
+  const advLead = document.getElementById('advisory-lead');
+  const advTitle = document.getElementById('advisory-title');
+  const advSummary = document.getElementById('advisory-summary');
+  const advList = document.getElementById('advisory-actions');
+
+  advBox.style.borderLeftColor = pred.risk_color;
+  advBadge.textContent = pred.advisory.badge;
+  advBadge.style.color = pred.risk_color;
+  advLead.textContent = pred.advisory.lead_time;
+  advTitle.textContent = pred.advisory.title;
+  advSummary.textContent = pred.advisory.summary;
+
+  advList.innerHTML = '';
+  pred.advisory.actions.forEach(action => {
+    const li = document.createElement('li');
+    li.textContent = action;
+    advList.appendChild(li);
+  });
+
+  // Driver Attribution Metrics
+  document.getElementById('lag-1').textContent = pred.lag1.toFixed(1) + ' mm';
+  document.getElementById('lag-2').textContent = pred.lag2.toFixed(1) + ' mm';
+  document.getElementById('lag-3').textContent = pred.lag3.toFixed(1) + ' mm';
+  document.getElementById('lag-4').textContent = pred.lag4.toFixed(1) + ' mm';
+  document.getElementById('lag-sum4w').textContent = pred.sum_4w.toFixed(1) + ' mm';
+}
+
+// Render Longitudinal Trend Chart (Rainfall vs. Cases)
+async function renderLongitudinalTrend(wardId, selectedDate) {
+  try {
+    const res = await fetch(`/api/history?ward_id=${wardId}`);
+    const data = await res.json();
+    const dates = data.records.map(r => r.date);
+    const cases = data.records.map(r => r.dengue_cases);
+    const rains = data.records.map(r => r.rainfall_mm);
+
+    const traceRain = {
+      x: dates,
+      y: rains,
+      name: 'Rainfall (mm)',
+      type: 'bar',
+      yaxis: 'y2',
+      marker: { color: 'rgba(223, 255, 82, 0.35)' },
+    };
+
+    const traceCases = {
+      x: dates,
+      y: cases,
+      name: 'Actual Cases',
+      type: 'scatter',
+      mode: 'lines',
+      line: { color: '#dc3545', width: 2.5 },
+      yaxis: 'y1',
+    };
+
+    const layout = JSON.parse(JSON.stringify(PLOTLY_THEME));
+    layout.height = 380;
+    layout.margin = { l: 40, r: 40, t: 20, b: 30 };
+    layout.hovermode = 'x unified';
+    layout.legend = { orientation: 'h', y: 1.05, x: 1, xanchor: 'right' };
+    layout.yaxis.title = 'Weekly Dengue Cases';
+    layout.yaxis2 = {
+      title: 'Rainfall (mm)',
+      overlaying: 'y',
+      side: 'right',
+      showgrid: false,
+      tickfont: { color: 'rgb(247, 255, 229)' },
+    };
+
+    if (selectedDate) {
+      layout.shapes = [{
+        type: 'line',
+        x0: selectedDate,
+        x1: selectedDate,
+        y0: 0,
+        y1: 1,
+        yref: 'paper',
+        line: { color: 'rgb(223, 255, 82)', width: 2, dash: 'dash' },
+      }];
+    }
+
+    Plotly.newPlot('chart-longitudinal', [traceRain, traceCases], layout, { responsive: true, displayModeBar: false });
+  } catch (err) {
+    console.error('Failed to render longitudinal chart:', err);
+  }
+}
+
+// Render City Ward Cross-Section Comparison Bar Chart
+async function renderWardCrossSection() {
+  try {
+    const topWards = wardsData.slice(0, 15).sort((a, b) => a.latest_cases - b.latest_cases);
+    const yLabels = topWards.map(w => w.ward_id);
+    const xValues = topWards.map(w => w.latest_cases);
+
+    const trace = {
+      x: xValues,
+      y: yLabels,
+      type: 'bar',
+      orientation: 'h',
+      marker: { color: '#DFFF52' },
+    };
+
+    const layout = JSON.parse(JSON.stringify(PLOTLY_THEME));
+    layout.height = 380;
+    layout.margin = { l: 90, r: 20, t: 20, b: 30 };
+    layout.xaxis.title = 'Observed Active Cases';
+
+    Plotly.newPlot('chart-cross-section', [trace], layout, { responsive: true, displayModeBar: false });
+  } catch (err) {
+    console.error('Failed to render cross-section chart:', err);
+  }
+}
+
+// 4. Vulnerability Matrix Tab
+async function loadVulnerabilityMatrix() {
+  try {
+    const res = await fetch('/api/vulnerability');
+    const data = await res.json();
+
+    document.getElementById('vuln-total-wards').textContent = data.total_wards;
+    document.getElementById('vuln-high-count').textContent = data.high_vulnerability_count;
+    document.getElementById('vuln-avg-drainage').textContent = data.city_avg_waterlog.toFixed(2);
+    document.getElementById('vuln-avg-sanitation').textContent = data.city_avg_sanitation.toFixed(2);
+
+    // Populate Table
+    const tbody = document.getElementById('table-vuln-body');
+    tbody.innerHTML = '';
+    data.wards.forEach(w => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td><strong>#${w.rank}</strong></td>
+        <td><strong>${w.ward_id}</strong></td>
+        <td>${w.city}</td>
+        <td><span style="color: rgb(223, 255, 82); font-weight: 700;">${w.vulnerability_score.toFixed(3)}</span></td>
+        <td>${w.water_logging_risk_index.toFixed(2)}</td>
+        <td>${w.sanitation_score.toFixed(2)}</td>
+        <td>${w.population_density_sqkm.toLocaleString()}</td>
+        <td><strong>${w.latest_cases}</strong></td>
+      `;
+      tbody.appendChild(tr);
+    });
+
+    // Render Scatter Chart: Drainage Index vs Population Density
+    const xDrain = data.wards.map(w => w.water_logging_risk_index);
+    const yPop = data.wards.map(w => w.population_density_sqkm);
+    const hoverText = data.wards.map(w => `${w.ward_id} | Score: ${w.vulnerability_score}`);
+
+    const traceScatter = {
+      x: xDrain,
+      y: yPop,
+      mode: 'markers',
+      type: 'scatter',
+      text: hoverText,
+      marker: {
+        size: 10,
+        color: data.wards.map(w => w.vulnerability_score),
+        colorscale: [[0, '#11998e'], [0.5, '#DFFF52'], [1, '#dc3545']],
+        showscale: true,
+        colorbar: {
+          title: 'Score',
+          tickfont: { color: 'rgb(247, 255, 229)' },
+          titlefont: { color: 'rgb(247, 255, 229)' },
+        },
+      },
+    };
+
+    const sLayout = JSON.parse(JSON.stringify(PLOTLY_THEME));
+    sLayout.height = 400;
+    sLayout.margin = { l: 60, r: 30, t: 20, b: 40 };
+    sLayout.xaxis.title = 'Water-Logging Risk Index';
+    sLayout.yaxis.title = 'Population Density (/km2)';
+
+    Plotly.newPlot('chart-vuln-scatter', [traceScatter], sLayout, { responsive: true, displayModeBar: false });
+  } catch (err) {
+    console.error('Failed to load vulnerability matrix:', err);
+  }
+}
+
+// 5. Epidemiological Analytics Tab
+async function loadAnalytics() {
+  try {
+    const res = await fetch('/api/analytics');
+    const data = await res.json();
+
+    // 1. Monthly Seasonality Chart
+    const mNames = data.monthly_seasonality.map(m => m.month_name);
+    const mCases = data.monthly_seasonality.map(m => m.dengue_cases);
+    const mRain = data.monthly_seasonality.map(m => m.rainfall_mm);
+
+    const traceRain = {
+      x: mNames,
+      y: mRain,
+      name: 'Rainfall (mm)',
+      type: 'bar',
+      yaxis: 'y2',
+      marker: { color: 'rgba(223, 255, 82, 0.4)' },
+    };
+
+    const traceCases = {
+      x: mNames,
+      y: mCases,
+      name: 'Average Cases / Ward',
+      type: 'scatter',
+      mode: 'lines+markers',
+      line: { color: '#dc3545', width: 3 },
+      marker: { size: 8, color: '#dc3545' },
+      yaxis: 'y1',
+    };
+
+    const mLayout = JSON.parse(JSON.stringify(PLOTLY_THEME));
+    mLayout.height = 390;
+    mLayout.margin = { l: 40, r: 40, t: 20, b: 30 };
+    mLayout.legend = { orientation: 'h', y: 1.05, x: 1, xanchor: 'right' };
+    mLayout.yaxis.title = 'Average Dengue Cases';
+    mLayout.yaxis2 = {
+      title: 'Average Rainfall (mm)',
+      overlaying: 'y',
+      side: 'right',
+      showgrid: false,
+      tickfont: { color: 'rgb(247, 255, 229)' },
+    };
+
+    Plotly.newPlot('chart-monthly-seasonality', [traceRain, traceCases], mLayout, { responsive: true, displayModeBar: false });
+
+    // 2. Pearson Correlation Bar Chart
+    const corrSorted = data.correlations.sort((a, b) => a.correlation - b.correlation);
+    const traceCorr = {
+      x: corrSorted.map(c => c.correlation),
+      y: corrSorted.map(c => c.feature),
+      type: 'bar',
+      orientation: 'h',
+      marker: {
+        color: corrSorted.map(c => c.correlation >= 0.6 ? '#dc3545' : (c.correlation >= 0.3 ? '#fd7e14' : '#DFFF52')),
+      },
+    };
+
+    const cLayout = JSON.parse(JSON.stringify(PLOTLY_THEME));
+    cLayout.height = 390;
+    cLayout.margin = { l: 140, r: 20, t: 20, b: 30 };
+    cLayout.xaxis.title = 'Pearson Correlation with Dengue Cases';
+
+    Plotly.newPlot('chart-correlations', [traceCorr], cLayout, { responsive: true, displayModeBar: false });
+  } catch (err) {
+    console.error('Failed to load analytics:', err);
+  }
+}
+
+// 6. Action Protocols Tab Threshold Simulator
+window.runThresholdSimulator = function () {
+  const rain = parseFloat(document.getElementById('sim-rain-4w').value) || 0;
+  const temp = parseFloat(document.getElementById('sim-temp').value) || 25;
+  const hum = parseFloat(document.getElementById('sim-hum').value) || 70;
+
+  const isHighRain = rain >= 250;
+  const isIdealTemp = temp >= 26 && temp <= 33;
+  const isHighHum = hum >= 80;
+
+  const resultBox = document.getElementById('sim-result-box');
+  const resultTitle = document.getElementById('sim-result-title');
+  const resultText = document.getElementById('sim-result-text');
+
+  if (isHighRain && isIdealTemp && isHighHum) {
+    resultBox.style.borderLeftColor = '#dc3545';
+    resultTitle.textContent = 'CRITICAL OUTBREAK ALERT';
+    resultTitle.style.color = '#dc3545';
+    resultText.textContent = 'TRIPLE-THRESHOLD EXCEEDED: High cumulative rainfall (' + rain + ' mm) with optimal temperature and >80% humidity. Severe probability of explosive vector emergence in 14-21 days. Mobilize vehicle-mounted thermal fogging within 48 hours.';
+  } else if ((rain >= 180 && isIdealTemp) || (isHighHum && rain >= 150)) {
+    resultBox.style.borderLeftColor = '#fd7e14';
+    resultTitle.textContent = 'HIGH RISK ADVISORY';
+    resultTitle.style.color = '#fd7e14';
+    resultText.textContent = 'PRE-OUTBREAK VECTOR AMPLIFICATION: Extensive aquatic breeding reservoirs detected. Public health teams have a 2 to 3 week lead time to apply biological larvicide (Bti) to all open drains before adults mature.';
+  } else if (rain >= 80 || (hum >= 70 && temp >= 22)) {
+    resultBox.style.borderLeftColor = '#ffc107';
+    resultTitle.textContent = 'ELEVATED RISK WATCH';
+    resultTitle.style.color = '#ffc107';
+    resultText.textContent = 'MICROCLIMATE PRIMING: Weather indicators support moderate mosquito reproduction. Inspect vacant construction plots, tire shops, and clear surface drainage.';
+  } else {
+    resultBox.style.borderLeftColor = '#28a745';
+    resultTitle.textContent = 'ROUTINE BASELINE';
+    resultTitle.style.color = '#28a745';
+    resultText.textContent = 'BASELINE VECTOR SUPPRESSION: Meteorological indicators suppress vector amplification and viral replication. Maintain routine municipal sanitation.';
+  }
+};
+
+// 7. Telemetry Tab
+async function loadTelemetry() {
+  try {
+    const res = await fetch('/api/telemetry');
+    const data = await res.json();
+    if (!data.splits) return;
+
+    const testSplit = data.splits.test;
+    const hurdle = testSplit.hurdle_model;
+    const base = testSplit.baseline_all_zero;
+
+    document.getElementById('telemetry-samples').textContent = testSplit.sample_count.toLocaleString();
+    document.getElementById('telemetry-prevalence').textContent = testSplit.positive_prevalence_pct.toFixed(2) + '%';
+    document.getElementById('telemetry-mae').textContent = hurdle.mae.toFixed(4) + ' (vs. ' + base.mae.toFixed(4) + ')';
+    document.getElementById('telemetry-recall').textContent = (hurdle.recall_positive * 100).toFixed(1) + '%';
+    document.getElementById('telemetry-f1').textContent = hurdle.f1_positive.toFixed(4);
+  } catch (err) {
+    console.error('Failed to load telemetry:', err);
+  }
+}

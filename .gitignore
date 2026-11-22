@@ -25,5 +25,8 @@ scratch/
 *.tmp
 *.log
 
+# AI Assistant Skills / CLI Tooling
+.agents/
+
 # Large Raw Excel if redundant with data/raw/dengue.csv
 hackathon_preli_dataset.xlsx

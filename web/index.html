@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Urban Dengue Risk Intelligence | Operation-Mosha</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+</head>
+<body>
+
+  <!-- Top Navigation Header -->
+  <header class="app-header">
+    <div class="header-container">
+      <div>
+        <div class="brand-title">Operation-Mosha</div>
+        <div class="brand-subtitle">Urban Dengue Risk Intelligence | Municipal Public Health Administration</div>
+      </div>
+      <nav>
+        <ul class="nav-tabs">
+          <li class="nav-item">
+            <button class="nav-btn active" data-target="surveillance">Surveillance & Forecast</button>
+          </li>
+          <li class="nav-item">
+            <button class="nav-btn" data-target="protocols">Action Protocols</button>
+          </li>
+          <li class="nav-item">
+            <button class="nav-btn" data-target="vulnerability">Vulnerability Matrix</button>
+          </li>
+          <li class="nav-item">
+            <button class="nav-btn" data-target="analytics">Historical Analytics</button>
+          </li>
+          <li class="nav-item">
+            <button class="nav-btn" data-target="telemetry">Model Telemetry</button>
+          </li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+
+  <!-- Main Viewport Shell -->
+  <main class="main-content">
+
+    <!-- VIEW 1: SURVEILLANCE & FORECAST (HOME) -->
+    <section id="surveillance" class="spa-view active">
+      <div class="hero-banner">
+        <div class="hero-tag">Executive Surveillance & Future Forecasting Engine</div>
+        <h1>Urban Dengue Risk Intelligence</h1>
+        <p style="margin: 0; font-size: 1.05rem; opacity: 0.85; max-width: 900px;">
+          Localhost vector-borne disease nowcasting and scenario simulation portal for municipal commissioners, chief medical officers, and vector control field teams.
+        </p>
+      </div>
+
+      <div class="grid-surveillance">
+        <!-- Sidebar Controls Column -->
+        <div class="card">
+          <div class="card-title">Surveillance Parameters</div>
+          <form id="forecast-form">
+            <div class="form-group">
+              <label class="form-label" for="select-city">City Jurisdiction</label>
+              <select id="select-city" class="form-control"></select>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="select-ward">Target Ward</label>
+              <select id="select-ward" class="form-control"></select>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="input-date">Observation Date (Past or Future)</label>
+              <input type="date" id="input-date" class="form-control" min="2016-01-01" max="2030-12-31">
+              <div class="form-hint">Select any historical week or future date up to 2030.</div>
+            </div>
+
+            <hr style="border-color: var(--border); margin: 20px 0;">
+
+            <div style="font-weight: 700; font-size: 0.9rem; color: var(--primary); text-transform: uppercase; margin-bottom: 12px; letter-spacing: 0.5px;">
+              Meteorological Inputs
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="num-rainfall">Current Week Rain (mm)</label>
+              <input type="number" id="num-rainfall" class="form-control" min="0" max="600" step="1.0" value="20.0">
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="num-temp">Average Temperature (deg C)</label>
+              <input type="number" id="num-temp" class="form-control" min="10" max="45" step="0.2" value="28.0">
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="num-humidity">Relative Humidity (%)</label>
+              <input type="number" id="num-humidity" class="form-control" min="10" max="100" step="1.0" value="75.0">
+            </div>
+
+            <button type="submit" id="btn-run-forecast" class="btn-primary">
+              Compute Outbreak Nowcast
+            </button>
+          </form>
+        </div>
+
+        <!-- Main Display Column -->
+        <div>
+          <!-- Status Banner -->
+          <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 14px; flex-wrap: wrap; gap: 8px;">
+            <h3>Surveillance Status Overview</h3>
+            <span id="surveillance-status-badge" style="font-size: 0.75rem; font-weight: 700; color: var(--primary); border: 1px solid var(--border); padding: 4px 10px; border-radius: 4px; text-transform: uppercase;">
+              NOWCAST MONITOR
+            </span>
+          </div>
+
+          <!-- KPI Cards Grid -->
+          <div class="grid-4" style="margin-bottom: 20px;">
+            <div id="card-tier" class="kpi-card">
+              <div class="kpi-label">Risk Tier</div>
+              <div id="kpi-tier" class="kpi-value">Low</div>
+              <div class="kpi-sub">Calibrated Action Protocol</div>
+            </div>
+
+            <div class="kpi-card" style="border-left-color: var(--primary);">
+              <div class="kpi-label">Expected Caseload</div>
+              <div id="kpi-cases" class="kpi-value">0.00</div>
+              <div id="kpi-cases-sub" class="kpi-sub">Weekly Predicted Cases</div>
+            </div>
+
+            <div class="kpi-card" style="border-left-color: var(--primary);">
+              <div class="kpi-label">Outbreak Probability</div>
+              <div id="kpi-prob" class="kpi-value">0.0%</div>
+              <div class="kpi-sub">P(Cases > 0 | Weather History)</div>
+            </div>
+
+            <div class="kpi-card" style="border-left-color: var(--primary);">
+              <div class="kpi-label">Drainage Vulnerability</div>
+              <div id="kpi-vuln" class="kpi-value">0.00</div>
+              <div id="kpi-density" class="kpi-sub">Density: 0 /km2</div>
+            </div>
+          </div>
+
+          <!-- Action Advisory Card -->
+          <div id="advisory-box" class="advisory-box">
+            <div class="advisory-header">
+              <span id="advisory-badge" class="advisory-badge" style="color: var(--primary);">SURVEILLANCE ADVISORY</span>
+              <span id="advisory-lead" class="advisory-lead">Biological Lead Window</span>
+            </div>
+            <div id="advisory-title" class="advisory-title">Baseline Vector Suppression</div>
+            <div id="advisory-summary" class="advisory-body">
+              Current meteorological indicators suppress mosquito proliferation and viral replication.
+            </div>
+            <div style="font-weight: 700; color: var(--primary); font-size: 0.85rem; text-transform: uppercase; margin-top: 14px; letter-spacing: 0.5px;">
+              Prescribed Municipal Interventions:
+            </div>
+            <ul id="advisory-actions" class="advisory-list advisory-body">
+              <li>Maintain standard municipal conservancy and waste clearing schedules.</li>
+            </ul>
+          </div>
+
+          <!-- Visual Trends Grid -->
+          <div class="grid-2">
+            <div class="card">
+              <div class="card-title">Historical Longitudinal Trends</div>
+              <div id="chart-longitudinal" style="width: 100%; height: 380px;"></div>
+            </div>
+
+            <div class="card">
+              <div class="card-title">City Ward Cross-Section Comparison</div>
+              <div id="chart-cross-section" style="width: 100%; height: 380px;"></div>
+            </div>
+          </div>
+
+          <!-- Driver Attribution -->
+          <div class="card" style="margin-top: 20px;">
+            <div class="card-title">Meteorological Lag Attribution (Mosquito Breeding History)</div>
+            <div style="font-size: 0.85rem; opacity: 0.8; margin-bottom: 14px;">
+              Multi-week rainfall accumulation driving active aquatic vector lifecycle:
+            </div>
+            <div class="grid-5">
+              <div style="background-color: rgb(0,41,46); padding: 12px 14px; border-radius: 4px; border: 1px solid var(--border);">
+                <div style="font-size: 0.72rem; text-transform: uppercase; opacity: 0.7;">Rainfall (t-1)</div>
+                <div id="lag-1" style="font-size: 1.4rem; font-weight: 700; color: var(--primary);">0.0 mm</div>
+              </div>
+              <div style="background-color: rgb(0,41,46); padding: 12px 14px; border-radius: 4px; border: 1px solid var(--border);">
+                <div style="font-size: 0.72rem; text-transform: uppercase; opacity: 0.7;">Rainfall (t-2)</div>
+                <div id="lag-2" style="font-size: 1.4rem; font-weight: 700; color: var(--primary);">0.0 mm</div>
+              </div>
+              <div style="background-color: rgb(0,41,46); padding: 12px 14px; border-radius: 4px; border: 1px solid var(--border);">
+                <div style="font-size: 0.72rem; text-transform: uppercase; opacity: 0.7;">Rainfall (t-3)</div>
+                <div id="lag-3" style="font-size: 1.4rem; font-weight: 700; color: var(--primary);">0.0 mm</div>
+              </div>
+              <div style="background-color: rgb(0,41,46); padding: 12px 14px; border-radius: 4px; border: 1px solid var(--border);">
+                <div style="font-size: 0.72rem; text-transform: uppercase; opacity: 0.7;">Rainfall (t-4)</div>
+                <div id="lag-4" style="font-size: 1.4rem; font-weight: 700; color: var(--primary);">0.0 mm</div>
+              </div>
+              <div style="background-color: rgb(0,41,46); padding: 12px 14px; border-radius: 4px; border: 1px solid var(--border);">
+                <div style="font-size: 0.72rem; text-transform: uppercase; opacity: 0.7;">4-Week Rain Sum</div>
+                <div id="lag-sum4w" style="font-size: 1.4rem; font-weight: 700; color: var(--primary);">0.0 mm</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- VIEW 2: ACTION PROTOCOLS -->
+    <section id="protocols" class="spa-view">
+      <div class="hero-banner">
+        <div class="hero-tag">Municipal Operational Guidelines</div>
+        <h1>Vector Control Action Protocols</h1>
+        <p style="margin: 0; font-size: 1.05rem; opacity: 0.85;">
+          Translating the 3-to-4 week biological lag between precipitation and clinical outbreak surge into concrete municipal field interventions.
+        </p>
+      </div>
+
+      <!-- 4-Stage Biological Progression -->
+      <div class="card" style="margin-bottom: 24px;">
+        <div class="card-title">The 4-Stage Biological Progression (Why Rain Dictates Cases 3-4 Weeks Later)</div>
+        <div class="grid-4">
+          <div style="background-color: rgb(0,41,46); border: 1px solid var(--border); border-radius: 6px; padding: 16px;">
+            <div style="font-size: 0.75rem; font-weight: 700; color: var(--primary); text-transform: uppercase;">Stage 1: Week t-4</div>
+            <div style="font-size: 1.1rem; font-weight: 700; margin: 4px 0;">Water Accumulation</div>
+            <div style="font-size: 0.85rem; opacity: 0.85;">
+              Heavy rainfall creates stagnant pools in unsealed drums, construction pits, discarded tires, and blocked drains.
+            </div>
+          </div>
+
+          <div style="background-color: rgb(0,41,46); border: 1px solid var(--border); border-radius: 6px; padding: 16px;">
+            <div style="font-size: 0.75rem; font-weight: 700; color: var(--primary); text-transform: uppercase;">Stage 2: Week t-3</div>
+            <div style="font-size: 1.1rem; font-weight: 700; margin: 4px 0;">Larval Metamorphosis</div>
+            <div style="font-size: 0.85rem; opacity: 0.85;">
+              Aedes eggs hatch into aquatic larvae and pupae. Development takes 7 to 10 days in warm ambient temperatures.
+            </div>
+          </div>
+
+          <div style="background-color: rgb(0,41,46); border: 1px solid var(--border); border-radius: 6px; padding: 16px;">
+            <div style="font-size: 0.75rem; font-weight: 700; color: var(--primary); text-transform: uppercase;">Stage 3: Week t-2</div>
+            <div style="font-size: 1.1rem; font-weight: 700; margin: 4px 0;">Vector Emergence & EIP</div>
+            <div style="font-size: 0.85rem; opacity: 0.85;">
+              Adult mosquitoes feed. Virus replicates inside the vector during the 8 to 12 day Extrinsic Incubation Period.
+            </div>
+          </div>
+
+          <div style="background-color: rgb(0,41,46); border-left: 4px solid var(--danger); border-top: 1px solid var(--border); border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); border-radius: 6px; padding: 16px;">
+            <div style="font-size: 0.75rem; font-weight: 700; color: var(--danger); text-transform: uppercase;">Stage 4: Week t</div>
+            <div style="font-size: 1.1rem; font-weight: 700; margin: 4px 0;">Clinical Outbreak Surge</div>
+            <div style="font-size: 0.85rem; opacity: 0.85;">
+              Infectious bites cause human infections. After 4 to 7 days intrinsic incubation, hospital admissions spike.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Policy Table -->
+      <div class="card" style="margin-bottom: 24px;">
+        <div class="card-title">Calibrated Public Health Intervention Standards</div>
+        <div class="table-wrapper">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Risk Tier</th>
+                <th>Criteria</th>
+                <th>Intervention Strategy</th>
+                <th>Operational Field Protocol</th>
+                <th>Responsible Authority</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><span class="badge badge-low">Low Risk</span></td>
+                <td>P &lt; 25% and Cases &lt; 1.0</td>
+                <td>Baseline Sanitation</td>
+                <td>Routine solid waste collection, clear discarded plastic containers, maintain baseline ovitrap monitoring.</td>
+                <td>Ward Conservancy Staff</td>
+              </tr>
+              <tr>
+                <td><span class="badge badge-medium">Medium Risk</span></td>
+                <td>25% &le; P &lt; 50% or 1 &le; Cases &lt; 3</td>
+                <td>Source Reduction & Habitat Inspection</td>
+                <td>Inspect construction sites, tire repair depots, and desilt road culverts. Broadcast public awareness notices.</td>
+                <td>Health Inspectors & Engineering Teams</td>
+              </tr>
+              <tr>
+                <td><span class="badge badge-high">High Risk</span></td>
+                <td>50% &le; P &lt; 75% or 3 &le; Cases &lt; 8</td>
+                <td>Targeted Larviciding Window (2-3 Weeks Ahead)</td>
+                <td>Apply biological larvicide (Bti) across all open waterlogged areas. Mobilize door-to-door water tank inspections.</td>
+                <td>Vector Control Squads & Community Health Staff</td>
+              </tr>
+              <tr>
+                <td><span class="badge badge-critical">Critical Risk</span></td>
+                <td>P &ge; 75% or Cases &ge; 8.0</td>
+                <td>Emergency Vector Knockdown & Hospital Surge</td>
+                <td>Deploy vehicle-mounted thermal fogging within 48 hours. Clear building rooftops. Reserve IV fluids and triage beds.</td>
+                <td>Rapid Response Task Force & Hospital Admins</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Interactive Threshold Simulator -->
+      <div class="card">
+        <div class="card-title">Early Warning Threshold Decision Simulator</div>
+        <div style="font-size: 0.85rem; opacity: 0.8; margin-bottom: 16px;">
+          Input anticipated weather parameters to evaluate required municipal alert tier:
+        </div>
+        <div class="grid-3" style="margin-bottom: 16px;">
+          <div class="form-group">
+            <label class="form-label" for="sim-rain-4w">Cumulative 4-Week Rain (mm)</label>
+            <input type="number" id="sim-rain-4w" class="form-control" min="0" max="800" step="10" value="260">
+            <div class="form-hint">Danger threshold: &ge; 250 mm</div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="sim-temp">Mean Temperature (deg C)</label>
+            <input type="number" id="sim-temp" class="form-control" min="15" max="45" step="0.5" value="30.5">
+            <div class="form-hint">Optimal transmission band: 26 - 32 deg C</div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="sim-hum">Relative Humidity (%)</label>
+            <input type="number" id="sim-hum" class="form-control" min="20" max="100" step="1" value="86">
+            <div class="form-hint">Danger threshold: &ge; 80%</div>
+          </div>
+        </div>
+
+        <button type="button" class="btn-primary" style="max-width: 300px;" onclick="runThresholdSimulator()">
+          Evaluate Alert Status
+        </button>
+
+        <div id="sim-result-box" class="advisory-box" style="margin-top: 20px; border-left-color: var(--danger);">
+          <div id="sim-result-title" class="advisory-title" style="color: var(--danger);">
+            CRITICAL OUTBREAK ALERT
+          </div>
+          <div id="sim-result-text" class="advisory-body">
+            TRIPLE-THRESHOLD EXCEEDED: High cumulative rainfall (260 mm) with optimal temperature (30.5 deg C) and &gt;80% humidity. Severe probability of explosive vector emergence in 14 to 21 days. Mobilize vehicle-mounted thermal fogging within 48 hours.
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- VIEW 3: VULNERABILITY MATRIX -->
+    <section id="vulnerability" class="spa-view">
+      <div class="hero-banner">
+        <div class="hero-tag">Municipal Resource Allocation Matrix</div>
+        <h1>Ward Vulnerability & Dispatch Matrix</h1>
+        <p style="margin: 0; font-size: 1.05rem; opacity: 0.85;">
+          Cross-sectional structural vulnerability audit across all 60 wards to prioritize the dispatch of spraying trucks and larviciding squads.
+        </p>
+      </div>
+
+      <!-- City Vulnerability Overview KPIs -->
+      <div class="grid-4" style="margin-bottom: 24px;">
+        <div class="kpi-card" style="border-left-color: var(--primary);">
+          <div class="kpi-label">Total Wards Monitored</div>
+          <div id="vuln-total-wards" class="kpi-value">60</div>
+          <div class="kpi-sub">Continuous Ward Timeline</div>
+        </div>
+
+        <div class="kpi-card" style="border-left-color: var(--danger);">
+          <div class="kpi-label">High Vulnerability Wards</div>
+          <div id="vuln-high-count" class="kpi-value">--</div>
+          <div class="kpi-sub">Score &ge; 0.60 Priority Cutoff</div>
+        </div>
+
+        <div class="kpi-card" style="border-left-color: var(--warning);">
+          <div class="kpi-label">City Avg Drainage Index</div>
+          <div id="vuln-avg-drainage" class="kpi-value">--</div>
+          <div class="kpi-sub">Water-Logging Deficit</div>
+        </div>
+
+        <div class="kpi-card" style="border-left-color: var(--success);">
+          <div class="kpi-label">City Avg Sanitation Score</div>
+          <div id="vuln-avg-sanitation" class="kpi-value">--</div>
+          <div class="kpi-sub">Municipal Waste Coverage</div>
+        </div>
+      </div>
+
+      <!-- Scatter Chart -->
+      <div class="card" style="margin-bottom: 24px;">
+        <div class="card-title">Water-Logging Index vs. Population Density Matrix</div>
+        <div style="font-size: 0.85rem; opacity: 0.8; margin-bottom: 12px;">
+          Wards in the upper-right quadrant present high host availability and persistent stagnant water:
+        </div>
+        <div id="chart-vuln-scatter" style="width: 100%; height: 400px;"></div>
+      </div>
+
+      <!-- Dispatch Table -->
+      <div class="card">
+        <div class="card-title">Municipal Dispatch Priority Table</div>
+        <div style="font-size: 0.85rem; opacity: 0.8; margin-bottom: 14px;">
+          Ranked by composite vulnerability: 45% drainage risk + 35% density + 20% sanitation deficit.
+        </div>
+        <div class="table-wrapper">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Rank</th>
+                <th>Ward ID</th>
+                <th>City</th>
+                <th>Vulnerability Score</th>
+                <th>Water-Logging Index</th>
+                <th>Sanitation Score</th>
+                <th>Pop. Density (/km2)</th>
+                <th>Active Cases</th>
+              </tr>
+            </thead>
+            <tbody id="table-vuln-body">
+              <tr><td colspan="8">Loading vulnerability rankings...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- VIEW 4: HISTORICAL ANALYTICS -->
+    <section id="analytics" class="spa-view">
+      <div class="hero-banner">
+        <div class="hero-tag">Epidemiological Research & Lag Dynamics</div>
+        <h1>Epidemiological Patterns & Lag Analytics</h1>
+        <p style="margin: 0; font-size: 1.05rem; opacity: 0.85;">
+          10-Year Empirical Dynamics of Rainfall Lags, Temperature Windows, and Vector Transmission (2016 to 2025).
+        </p>
+      </div>
+
+      <div class="grid-2" style="margin-bottom: 24px;">
+        <div class="card">
+          <div class="card-title">Annual Transmission Seasonality (10-Year Monthly Means)</div>
+          <div id="chart-monthly-seasonality" style="width: 100%; height: 390px;"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Pearson Correlation with Weekly Dengue Cases</div>
+          <div id="chart-correlations" style="width: 100%; height: 390px;"></div>
+        </div>
+      </div>
+
+      <!-- Findings Box -->
+      <div class="card">
+        <div class="card-title">Key Epidemiological Insights for Public Health Administrators</div>
+        <div class="grid-2">
+          <div style="background-color: rgb(0,41,46); border: 1px solid var(--border); border-radius: 6px; padding: 18px;">
+            <div style="font-weight: 700; color: var(--primary); margin-bottom: 6px;">
+              The 3-4 Week Lag Primacy (+0.8066 vs. +0.5298)
+            </div>
+            <p style="font-size: 0.88rem; line-height: 1.6; opacity: 0.9; margin: 0;">
+              Cumulative 4-week rainfall correlation (+0.8066) and lag-3 rainfall (+0.7499) drastically outweigh same-week precipitation (+0.5298). Waiting for rain to manifest as clinical cases before deploying larvicide guarantees an outbreak. Intervention must occur at weeks t-3 and t-2.
+            </p>
+          </div>
+
+          <div style="background-color: rgb(0,41,46); border: 1px solid var(--border); border-radius: 6px; padding: 18px;">
+            <div style="font-weight: 700; color: var(--primary); margin-bottom: 6px;">
+              Thermal & Humidity Windows (+0.5256 & +0.3322)
+            </div>
+            <p style="font-size: 0.88rem; line-height: 1.6; opacity: 0.9; margin: 0;">
+              Relative humidity exceeding 80% prevents adult mosquito desiccation, extending vector survival past the 8-12 day viral Extrinsic Incubation Period. Temperatures below 20 deg C or above 36 deg C halt transmission.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- VIEW 5: MODEL TELEMETRY -->
+    <section id="telemetry" class="spa-view">
+      <div class="hero-banner">
+        <div class="hero-tag">Model Validation & Benchmark Telemetry</div>
+        <h1>Model Telemetry & Empirical Verification</h1>
+        <p style="margin: 0; font-size: 1.05rem; opacity: 0.85;">
+          Rigorous out-of-sample benchmarking against all-zero baselines across chronological temporal horizons.
+        </p>
+      </div>
+
+      <!-- Telemetry Highlights -->
+      <div class="grid-5" style="margin-bottom: 24px;">
+        <div class="kpi-card" style="border-left-color: var(--primary);">
+          <div class="kpi-label">2025 Test Samples</div>
+          <div id="telemetry-samples" class="kpi-value">3,180</div>
+          <div class="kpi-sub">Held-Out Horizon</div>
+        </div>
+
+        <div class="kpi-card" style="border-left-color: var(--primary);">
+          <div class="kpi-label">Outbreak Prevalence</div>
+          <div id="telemetry-prevalence" class="kpi-value">41.95%</div>
+          <div class="kpi-sub">Positive Case Weeks</div>
+        </div>
+
+        <div class="kpi-card" style="border-left-color: var(--success);">
+          <div class="kpi-label">Hurdle MAE</div>
+          <div id="telemetry-mae" class="kpi-value">0.8710</div>
+          <div class="kpi-sub">vs. 2.3798 Baseline</div>
+        </div>
+
+        <div class="kpi-card" style="border-left-color: var(--success);">
+          <div class="kpi-label">Outbreak Recall</div>
+          <div id="telemetry-recall" class="kpi-value">84.1%</div>
+          <div class="kpi-sub">vs. 0.0% Baseline</div>
+        </div>
+
+        <div class="kpi-card" style="border-left-color: var(--success);">
+          <div class="kpi-label">Outbreak F1 Score</div>
+          <div id="telemetry-f1" class="kpi-value">0.8820</div>
+          <div class="kpi-sub">Balanced Sensitivity</div>
+        </div>
+      </div>
+
+      <!-- Benchmark Table -->
+      <div class="card" style="margin-bottom: 24px;">
+        <div class="card-title">Empirical Benchmark: Two-Stage Hurdle vs. Zero-Inflation Baseline</div>
+        <div class="table-wrapper">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Evaluation Metric</th>
+                <th>Two-Stage Hurdle Model</th>
+                <th>All-Zero Baseline</th>
+                <th>Operational Consequence</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Mean Absolute Error (MAE)</strong></td>
+                <td><strong style="color: var(--primary);">0.8710</strong></td>
+                <td>2.3798</td>
+                <td>63.4% error reduction; tight tracking of non-outbreak and moderate caseloads.</td>
+              </tr>
+              <tr>
+                <td><strong>Root Mean Squared Error (RMSE)</strong></td>
+                <td><strong style="color: var(--primary);">1.6370</strong></td>
+                <td>4.6067</td>
+                <td>64.5% reduction in squared penalty; heavily penalizes missed epidemic spikes.</td>
+              </tr>
+              <tr>
+                <td><strong>Outbreak Recall (Positive Weeks)</strong></td>
+                <td><strong style="color: var(--primary);">84.1%</strong></td>
+                <td>0.0%</td>
+                <td>Detects 84 out of every 100 outbreak weeks; baseline completely misses every outbreak.</td>
+              </tr>
+              <tr>
+                <td><strong>Outbreak F1 Score</strong></td>
+                <td><strong style="color: var(--primary);">0.8820</strong></td>
+                <td>0.0000</td>
+                <td>Balanced precision and recall preventing both false alarms and catastrophic misses.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Architectural Formulation -->
+      <div class="card">
+        <div class="card-title">Statistical Formulation & Design Rationale</div>
+        <div style="font-size: 0.92rem; line-height: 1.6; opacity: 0.9;">
+          <p>
+            Because 58.03% of weekly ward records report zero dengue cases, single-stage regression suffers from zero-inflation collapse—predicting small fractions near zero and missing sharp outbreak spikes.
+          </p>
+          <p>
+            The <strong>Two-Stage Hurdle Model</strong> decomposes inference into two decoupled estimators:
+          </p>
+          <div style="background-color: rgb(0,41,46); border-left: 4px solid var(--primary); padding: 14px 18px; border-radius: 4px; font-family: monospace; font-size: 0.95rem; margin: 12px 0;">
+            Expected Cases = P(Cases &gt; 0 | X) * E[Cases | Cases &gt; 0, X]
+          </div>
+          <p style="margin-bottom: 0;">
+            <strong>Stage 1:</strong> HistGradientBoostingClassifier determines probability of outbreak occurrence.<br>
+            <strong>Stage 2:</strong> HistGradientBoostingRegressor, trained strictly on positive case instances, estimates severity conditional on occurrence.
+          </p>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Footer -->
+  <footer class="app-footer">
+    Operation-Mosha | EDU AI Engineering Hackathon 2026 | Technical Architecture: Rajen Sikder, Sadrul, Ibrahim | Zero Emojis Enforced
+  </footer>
+
+  <script src="/js/app.js"></script>
+</body>
+</html>
